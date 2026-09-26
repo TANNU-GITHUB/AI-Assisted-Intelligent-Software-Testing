@@ -1,0 +1,216 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 3.1%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 5%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 48 96% 53%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 48 96% 53%;
+    --accent-foreground: 0 0% 4%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 48 96% 53%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 98%;
+    --warning: 48 96% 53%;
+    --warning-foreground: 0 0% 4%;
+    --radius: 0.5rem;
+
+    --chart-1: 48 96% 53%;
+    --chart-2: 142 71% 45%;
+    --chart-3: 0 84% 60%;
+    --chart-4: 197 37% 50%;
+    --chart-5: 27 87% 67%;
+  }
+
+  /* ── Light Theme ── */
+  .light {
+    --background: 42 30% 96%;
+    --foreground: 220 20% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 12%;
+    --primary: 43 96% 46%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 220 14% 90%;
+    --secondary-foreground: 220 20% 12%;
+    --muted: 220 14% 90%;
+    --muted-foreground: 220 10% 46%;
+    --accent: 43 96% 46%;
+    --accent-foreground: 0 0% 4%;
+    --destructive: 0 84% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 82%;
+    --input: 220 13% 82%;
+    --ring: 43 96% 46%;
+    --success: 142 71% 38%;
+    --success-foreground: 0 0% 98%;
+    --warning: 43 96% 46%;
+    --warning-foreground: 0 0% 4%;
+
+    --chart-1: 43 96% 46%;
+    --chart-2: 142 71% 38%;
+    --chart-3: 0 84% 55%;
+    --chart-4: 197 37% 44%;
+    --chart-5: 27 87% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    transition: background-color 0.35s ease, border-color 0.35s ease;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv01";
+    overflow-x: hidden;
+    transition: background-color 0.35s ease, color 0.35s ease;
+  }
+  ::selection {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+}
+
+@layer utilities {
+  .font-mono-code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .bg-grid-yellow {
+    background-image:
+      linear-gradient(to right, rgba(250,204,21,0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(250,204,21,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .text-stroke-yellow {
+    -webkit-text-stroke: 1px hsl(var(--primary));
+    color: transparent;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Light-mode grid override */
+.light .bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(30,30,60,0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(30,30,60,0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Custom scrollbar — uses CSS variables, adapts to theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.5);
+}
+
+/* Custom cursor */
+@media (hover: hover) and (pointer: fine) {
+  * {
+    cursor: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+@keyframes pulse-yellow {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(48 96% 53% / 0.4); }
+  50% { box-shadow: 0 0 0 8px hsl(48 96% 53% / 0); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes glitch {
+  0%, 100% { transform: translate(0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(-2px, -2px); }
+  60% { transform: translate(2px, 2px); }
+  80% { transform: translate(2px, -2px); }
+}
+
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-scan-line {
+  animation: scan-line 3s ease-in-out infinite;
+}
+.animate-pulse-yellow {
+  animation: pulse-yellow 2s ease-in-out infinite;
+}
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+.animate-glitch {
+  animation: glitch 0.3s ease-in-out infinite;
+}
+.animate-slide-up-fade {
+  animation: slide-up-fade 0.6s ease-out forwards;
+}
+.animate-ticker {
+  animation: ticker 30s linear infinite;
+}
