@@ -1,0 +1,5 @@
+Members receive a 10% discount on every item.
+Non-members pay the full price.
+Negative prices must be rejected with an error.
+If a member's checkout total is greater than 500, apply an extra 20 currency units off.
+Empty carts should produce a total of 0.

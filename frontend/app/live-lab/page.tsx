@@ -6,156 +6,167 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Footer } from '@/components/navigation/Footer';
 import { LabButton } from '@/components/ui/LabButton';
 import {
-  Play,
   RotateCcw,
   Code2,
   FileText,
   Cpu,
   CheckCircle2,
-  XCircle,
   Loader2,
-  Scan,
-  Bug,
-  FileBarChart,
   Zap,
 } from 'lucide-react';
+import {
+  checkHealth,
+  createSession,
+  fetchExample,
+  persistSessionId,
+  runCodeAnalysis,
+  runRequirementAnalysis,
+  type FunctionAnalysis,
+  type SessionPayload,
+  type StructuredRequirement,
+} from '@/lib/api';
 
 const TestingLabScene = dynamic(
   () => import('@/components/3d/TestingLabScene').then((m) => m.TestingLabScene),
   { ssr: false }
 );
 
-const simulationStages = [
-  { label: 'Reading source code...', icon: Code2, duration: 1500 },
-  { label: 'Analyzing requirements...', icon: FileText, duration: 1500 },
-  { label: 'Building test model...', icon: Cpu, duration: 1500 },
-  { label: 'Generating test cases...', icon: FileText, duration: 2000 },
-  { label: 'Executing tests...', icon: Play, duration: 2000 },
-  { label: 'Scanning for defects...', icon: Scan, duration: 1500 },
-  { label: 'Analyzing failures...', icon: Bug, duration: 1500 },
-  { label: 'Generating report...', icon: FileBarChart, duration: 1500 },
+const FALLBACK_SOURCE = `def calculate_discount(price: float, is_member: bool) -> float:
+    if price < 0:
+        raise ValueError("price must be non-negative")
+    if is_member:
+        return price * 0.9
+    return price
+
+
+def checkout_total(prices: list[float], is_member: bool) -> float:
+    total = 0.0
+    for price in prices:
+        total += calculate_discount(price, is_member)
+    if total > 500 and is_member:
+        total -= 20
+    return total
+`;
+
+const FALLBACK_REQUIREMENTS = `Members receive a 10% discount on every item.
+Non-members pay the full price.
+Negative prices must be rejected with an error.
+If a member's checkout total is greater than 500, apply an extra 20 currency units off.
+Empty carts should produce a total of 0.
+`;
+
+const analysisStages = [
+  { label: 'Saving source and requirements...', icon: FileText },
+  { label: 'Analyzing source code...', icon: Code2 },
+  { label: 'Analyzing requirements with Gemini...', icon: FileText },
 ];
-
-const mockTestCases = [
-  { id: 'TC-001', name: 'Valid login with correct credentials', type: 'Unit', status: 'passed', module: 'Auth' },
-  { id: 'TC-002', name: 'Login with invalid password', type: 'Negative', status: 'passed', module: 'Auth' },
-  { id: 'TC-003', name: 'Session timeout after inactivity', type: 'Integration', status: 'failed', module: 'Session' },
-  { id: 'TC-004', name: 'Concurrent user registration', type: 'Integration', status: 'passed', module: 'User' },
-  { id: 'TC-005', name: 'SQL injection in search field', type: 'Negative', status: 'passed', module: 'Search' },
-  { id: 'TC-006', name: 'Password reset flow', type: 'Regression', status: 'failed', module: 'Auth' },
-  { id: 'TC-007', name: 'API rate limiting enforcement', type: 'Integration', status: 'passed', module: 'API' },
-  { id: 'TC-008', name: 'File upload size validation', type: 'Unit', status: 'passed', module: 'Upload' },
-  { id: 'TC-009', name: 'Role-based access control', type: 'White Box', status: 'passed', module: 'Auth' },
-  { id: 'TC-010', name: 'Data integrity on network failure', type: 'Negative', status: 'failed', module: 'Network' },
-  { id: 'TC-011', name: 'Cache invalidation on update', type: 'Regression', status: 'passed', module: 'Cache' },
-  { id: 'TC-012', name: 'Pagination with 1000+ records', type: 'Black Box', status: 'passed', module: 'Data' },
-];
-
-const sourceCode = `function authenticate(email, password) {
-  const user = db.findUser(email);
-  if (!user) return { error: 'User not found' };
-  
-  const valid = bcrypt.compare(password, user.hash);
-  if (!valid) return { error: 'Invalid credentials' };
-  
-  const session = createSession(user.id);
-  return { session, user };
-}
-
-function createSession(userId) {
-  return {
-    id: uuid(),
-    userId,
-    expires: Date.now() + 3600000,
-  };
-}`;
-
-const requirements = `REQ-01: User shall be able to login with email and password
-REQ-02: System shall reject invalid credentials
-REQ-03: Sessions shall expire after 1 hour
-REQ-04: Password reset shall require email verification
-REQ-05: API shall enforce rate limiting (100 req/min)
-REQ-06: File uploads shall be limited to 10MB
-REQ-07: Role-based access shall restrict admin endpoints
-REQ-08: System shall handle network failures gracefully`;
 
 export default function LiveLabPage() {
   const [phase, setPhase] = useState<'idle' | 'running' | 'complete'>('idle');
   const [stageIndex, setStageIndex] = useState(0);
-  const [visibleTests, setVisibleTests] = useState(0);
   const [show3D, setShow3D] = useState(false);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [sourceCode, setSourceCode] = useState(FALLBACK_SOURCE);
+  const [requirements, setRequirements] = useState(FALLBACK_REQUIREMENTS);
+  const [filename, setFilename] = useState('sample_source.py');
+  const [backendUp, setBackendUp] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [session, setSession] = useState<SessionPayload | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setShow3D(true);
+    checkHealth().then(setBackendUp);
+    fetchExample()
+      .then((example) => {
+        setSourceCode(example.source_code);
+        setRequirements(example.requirements_text);
+        setFilename(example.filename);
+      })
+      .catch(() => undefined);
   }, []);
 
-  const runSimulation = () => {
-    setPhase('running');
-    setStageIndex(0);
-    setVisibleTests(0);
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = [];
-
-    let elapsed = 0;
-    simulationStages.forEach((stage, i) => {
-      elapsed += stage.duration;
-      timersRef.current.push(
-        setTimeout(() => {
-          setStageIndex(i + 1);
-          if (i === 3) {
-            // Start revealing test cases
-            mockTestCases.forEach((_, j) => {
-              timersRef.current.push(
-                setTimeout(() => setVisibleTests(j + 1), j * 150)
-              );
-            });
-          }
-          if (i === simulationStages.length - 1) {
-            timersRef.current.push(
-              setTimeout(() => setPhase('complete'), 500)
-            );
-          }
-        }, elapsed)
-      );
+  const onUpload = (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.py')) {
+      setError('Only Python source files (.py) are accepted.');
+      return;
+    }
+    file.text().then((text) => {
+      setSourceCode(text);
+      setFilename(file.name);
+      setError(null);
     });
   };
 
-  const reset = () => {
-    timersRef.current.forEach(clearTimeout);
-    setPhase('idle');
+  const runAnalysis = async () => {
+    setError(null);
+    setSession(null);
+    setPhase('running');
     setStageIndex(0);
-    setVisibleTests(0);
+    let latest: SessionPayload | null = null;
+    try {
+      const created = await createSession(sourceCode, requirements, filename);
+      latest = created;
+      persistSessionId(created.session_id);
+      setStageIndex(1);
+      const withCode = await runCodeAnalysis(created.session_id);
+      latest = withCode;
+      setSession(withCode);
+      setStageIndex(2);
+      const withReqs = await runRequirementAnalysis(created.session_id);
+      latest = withReqs;
+      persistSessionId(withReqs.session_id);
+      setSession(withReqs);
+      setStageIndex(3);
+      setPhase('complete');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Analysis failed.');
+      if (latest) {
+        setSession(latest);
+        setPhase('complete');
+      } else {
+        setPhase('idle');
+      }
+    }
   };
 
-  useEffect(() => {
-    return () => timersRef.current.forEach(clearTimeout);
-  }, []);
+  const reset = () => {
+    setPhase('idle');
+    setStageIndex(0);
+    setError(null);
+    setSession(null);
+  };
 
-  const passed = mockTestCases.filter((t) => t.status === 'passed').length;
-  const failed = mockTestCases.filter((t) => t.status === 'failed').length;
+  const functions: FunctionAnalysis[] = session?.code_analysis?.functions || [];
+  const structuredReqs: StructuredRequirement[] =
+    session?.requirement_analysis?.requirements || [];
 
   return (
     <>
       <section className="relative min-h-screen pt-20 px-4 sm:px-6 lg:px-10 pb-12">
-        {/* Header */}
         <div className="max-w-7xl mx-auto mb-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-white">
                 AI Testing Lab
               </h1>
-              <p className="text-sm text-neutral-500 mt-1">
-                Interactive simulation workspace — frontend demo with mock data
-              </p>
+
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-yellow-500/20 bg-yellow-500/5">
-              <span className={`w-2 h-2 rounded-full ${
-                phase === 'running' ? 'bg-yellow-500 animate-pulse' :
-                phase === 'complete' ? 'bg-green-500' : 'bg-neutral-600'
-              }`} />
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  phase === 'running'
+                    ? 'bg-yellow-500 animate-pulse'
+                    : phase === 'complete'
+                    ? 'bg-green-500'
+                    : backendUp
+                    ? 'bg-green-500'
+                    : backendUp === false
+                    ? 'bg-red-500'
+                    : 'bg-neutral-600'
+                }`}
+              />
               <span className="font-mono text-xs text-yellow-500">
-                {phase === 'idle' && 'READY'}
+                {phase === 'idle' && (backendUp === false ? 'BACKEND OFFLINE' : 'READY')}
                 {phase === 'running' && 'PROCESSING...'}
                 {phase === 'complete' && 'COMPLETE'}
               </span>
@@ -163,47 +174,56 @@ export default function LiveLabPage() {
           </div>
         </div>
 
-        {/* Main grid */}
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Source Code Panel */}
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800 bg-neutral-900/50">
               <Code2 className="w-4 h-4 text-yellow-500" />
               <span className="font-mono text-xs text-neutral-400 tracking-wider">SOURCE CODE</span>
-              <span className="ml-auto text-xs text-neutral-600 font-mono">auth.js</span>
+              <span className="ml-auto text-xs text-neutral-600 font-mono">{filename}</span>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={phase === 'running'}
+                className="text-xs font-mono text-yellow-500 hover:text-yellow-400"
+              >
+                Upload
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".py"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onUpload(file);
+                  e.target.value = '';
+                }}
+              />
             </div>
-            <div className="p-4 max-h-[400px] overflow-auto scrollbar-hide">
-              <pre className="font-mono text-xs text-neutral-300 leading-relaxed">
-                <code>{sourceCode.split('\n').map((line, i) => (
-                  <div key={i} className="flex">
-                    <span className="text-neutral-600 w-6 select-none">{i + 1}</span>
-                    <span className={line.trim().startsWith('function') ? 'text-yellow-500' : ''}>
-                      {line || ' '}
-                    </span>
-                  </div>
-                ))}</code>
-              </pre>
-            </div>
+            <textarea
+              value={sourceCode}
+              onChange={(e) => setSourceCode(e.target.value)}
+              disabled={phase === 'running'}
+              spellCheck={false}
+              className="w-full h-[400px] p-4 bg-transparent font-mono text-xs text-neutral-300 leading-relaxed resize-none outline-none scrollbar-hide"
+            />
           </div>
 
-          {/* Requirements Panel */}
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800 bg-neutral-900/50">
               <FileText className="w-4 h-4 text-yellow-500" />
               <span className="font-mono text-xs text-neutral-400 tracking-wider">REQUIREMENTS</span>
-              <span className="ml-auto text-xs text-neutral-600 font-mono">spec.md</span>
+              <span className="ml-auto text-xs text-neutral-600 font-mono">requirements.txt</span>
             </div>
-            <div className="p-4 max-h-[400px] overflow-auto scrollbar-hide space-y-2">
-              {requirements.split('\n').map((line, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs">
-                  <span className="text-yellow-500 font-mono">{line.split(':')[0]}</span>
-                  <span className="text-neutral-400">{line.split(':')[1]}</span>
-                </div>
-              ))}
-            </div>
+            <textarea
+              value={requirements}
+              onChange={(e) => setRequirements(e.target.value)}
+              disabled={phase === 'running'}
+              spellCheck={false}
+              className="w-full h-[400px] p-4 bg-transparent font-mono text-xs text-neutral-300 leading-relaxed resize-none outline-none scrollbar-hide"
+            />
           </div>
 
-          {/* AI Engine Panel */}
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800 bg-neutral-900/50">
               <Cpu className="w-4 h-4 text-yellow-500" />
@@ -216,22 +236,22 @@ export default function LiveLabPage() {
                 </div>
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-transparent to-transparent" />
-              {/* Stage overlay */}
               {phase === 'running' && (
                 <div className="absolute bottom-4 left-4 right-4">
                   <div className="flex items-center gap-2 mb-2">
                     {(() => {
-                      const StageIcon = simulationStages[Math.min(stageIndex, simulationStages.length - 1)].icon;
+                      const StageIcon =
+                        analysisStages[Math.min(stageIndex, analysisStages.length - 1)].icon;
                       return <StageIcon className="w-4 h-4 text-yellow-500 animate-pulse" />;
                     })()}
                     <span className="font-mono text-xs text-yellow-500">
-                      {simulationStages[Math.min(stageIndex, simulationStages.length - 1)].label}
+                      {analysisStages[Math.min(stageIndex, analysisStages.length - 1)].label}
                     </span>
                   </div>
                   <div className="h-1 bg-neutral-800 rounded-full overflow-hidden">
                     <motion.div
                       className="h-full bg-yellow-500"
-                      animate={{ width: `${(stageIndex / simulationStages.length) * 100}%` }}
+                      animate={{ width: `${((stageIndex + 1) / analysisStages.length) * 100}%` }}
                     />
                   </div>
                 </div>
@@ -240,22 +260,22 @@ export default function LiveLabPage() {
           </div>
         </div>
 
-        {/* Control bar */}
-        <div className="max-w-7xl mx-auto mt-4 flex items-center justify-center gap-4">
+        <div className="max-w-7xl mx-auto mt-4 flex flex-col items-center justify-center gap-3">
+          {error && (
+            <p className="text-sm text-red-400 font-mono text-center max-w-2xl">{error}</p>
+          )}
           {phase === 'idle' && (
-            <LabButton size="lg" onClick={runSimulation}>
+            <LabButton size="lg" onClick={runAnalysis} disabled={backendUp === false}>
               <Zap className="w-4 h-4 fill-current" />
-              Generate Tests
+              Run Analysis
             </LabButton>
           )}
           {phase === 'running' && (
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5">
-                <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />
-                <span className="font-mono text-sm text-yellow-500">
-                  {simulationStages[Math.min(stageIndex, simulationStages.length - 1)].label}
-                </span>
-              </div>
+            <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5">
+              <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />
+              <span className="font-mono text-sm text-yellow-500">
+                {analysisStages[Math.min(stageIndex, analysisStages.length - 1)].label}
+              </span>
             </div>
           )}
           {phase === 'complete' && (
@@ -264,61 +284,77 @@ export default function LiveLabPage() {
                 <RotateCcw className="w-4 h-4" />
                 Reset
               </LabButton>
-              <a href="/dashboard">
-                <LabButton size="sm">
-                  View Full Report
-                </LabButton>
-              </a>
+              {session?.session_id && (
+                <a href={`/dashboard?session=${session.session_id}`}>
+                  <LabButton size="sm">View Full Report</LabButton>
+                </a>
+              )}
             </div>
           )}
         </div>
 
-        {/* Generated test cases */}
-        {(phase === 'running' || phase === 'complete') && visibleTests > 0 && (
+        {functions.length > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Generated Test Cases</h3>
-              {phase === 'complete' && (
-                <div className="flex items-center gap-4 text-sm">
-                  <span className="flex items-center gap-1.5 text-green-500">
-                    <CheckCircle2 className="w-4 h-4" />
-                    {passed} Passed
-                  </span>
-                  <span className="flex items-center gap-1.5 text-red-500">
-                    <XCircle className="w-4 h-4" />
-                    {failed} Failed
-                  </span>
-                </div>
-              )}
+              <h3 className="text-lg font-bold text-white">Source Code Analysis</h3>
+              <span className="flex items-center gap-1.5 text-green-500 text-sm">
+                <CheckCircle2 className="w-4 h-4" />
+                {functions.length} functions
+              </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <AnimatePresence>
-                {mockTestCases.slice(0, visibleTests).map((tc, i) => (
+                {functions.map((fn) => (
                   <motion.div
-                    key={tc.id}
+                    key={fn.qualified_name}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className={`p-4 rounded-xl border ${
-                      tc.status === 'passed' ? 'border-green-500/20 bg-green-500/5' :
-                      tc.status === 'failed' ? 'border-red-500/20 bg-red-500/5' :
-                      'border-neutral-800 bg-neutral-900/50'
-                    }`}
+                    className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs text-yellow-500">{tc.id}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        tc.status === 'passed' ? 'bg-green-500/10 text-green-500' :
-                        'bg-red-500/10 text-red-500'
-                      }`}>
-                        {tc.status === 'passed' ? 'PASSED' : 'FAILED'}
+                      <span className="font-mono text-xs text-yellow-500">{fn.qualified_name}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500">
+                        CC {fn.cyclomatic_complexity}
                       </span>
                     </div>
-                    <p className="text-sm text-white mb-2">{tc.name}</p>
+                    <p className="text-sm text-white mb-2">
+                      {fn.params.map((p) => p.name).join(', ') || 'no params'}
+                    </p>
                     <div className="flex items-center gap-2 text-xs text-neutral-500">
-                      <span className="font-mono">{tc.type}</span>
+                      <span className="font-mono">lines {fn.lineno}–{fn.end_lineno}</span>
                       <span>•</span>
-                      <span>{tc.module}</span>
+                      <span>{fn.branch_count} branches</span>
                     </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {structuredReqs.length > 0 && (
+          <div className="max-w-7xl mx-auto mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white">Requirement Analysis</h3>
+              <span className="flex items-center gap-1.5 text-green-500 text-sm">
+                <CheckCircle2 className="w-4 h-4" />
+                {structuredReqs.length} testable rules
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <AnimatePresence>
+                {structuredReqs.map((req) => (
+                  <motion.div
+                    key={req.requirement_id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 rounded-xl border border-green-500/20 bg-green-500/5"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-mono text-xs text-yellow-500">{req.requirement_id}</span>
+                    </div>
+                    <p className="text-sm text-white mb-2">{req.condition}</p>
+                    <p className="text-xs text-neutral-400">{req.expected_result}</p>
                   </motion.div>
                 ))}
               </AnimatePresence>

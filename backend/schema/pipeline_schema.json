@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Testing Pipeline Session",
+  "description": "Shared JSON contract passed between modules. Every later task reads and extends this object.",
+  "type": "object",
+  "required": ["schema_version", "session_id", "created_at", "status"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "session_id": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "status": {
+      "type": "string",
+      "enum": [
+        "created",
+        "code_analyzed",
+        "requirements_analyzed",
+        "ready_for_test_generation"
+      ]
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "source_filename": { "type": "string" },
+        "source_path": { "type": "string" },
+        "requirements_path": { "type": "string" },
+        "original_filename": { "type": "string" }
+      }
+    },
+    "code_analysis": {
+      "type": "object",
+      "properties": {
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "params",
+              "lineno",
+              "end_lineno",
+              "branch_count",
+              "cyclomatic_complexity"
+            ],
+            "properties": {
+              "name": { "type": "string" },
+              "qualified_name": { "type": "string" },
+              "params": { "type": "array" },
+              "return_type": { "type": ["string", "null"] },
+              "lineno": { "type": "integer" },
+              "end_lineno": { "type": "integer" },
+              "branches": { "type": "array" },
+              "branch_count": { "type": "integer" },
+              "cyclomatic_complexity": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "requirement_analysis": {
+      "type": "object",
+      "properties": {
+        "requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["requirement_id", "condition", "expected_result"],
+            "properties": {
+              "requirement_id": { "type": "string" },
+              "condition": { "type": "string" },
+              "expected_result": { "type": "string" },
+              "source_excerpt": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "errors": { "type": "array" }
+  }
+}

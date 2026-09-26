@@ -171,9 +171,50 @@ The system will be evaluated using:
 * Test generation efficiency
 * Redundant test cases
 
+## 🚀 Phase 1 (Tasks 1–4) — Next.js frontend + FastAPI backend
+
+The website UI is in `frontend/` (Next.js). The analysis engine is in `backend/` (FastAPI). Streamlit from the implementation guide is not used; the existing Next.js Live Lab and Dashboard talk to the Python API.
+
+### Where to paste the Gemini API key
+
+Open **`backend/.env`** and set:
+
+```env
+GEMINI_API_KEY=paste_your_key_here
+```
+
+Create a key at [Google AI Studio](https://aistudio.google.com/apikey). Do not commit `.env`.
+
+### Run locally (both must be running)
+
+Terminal 1 — backend:
+
+```bash
+cd backend
+..\venv\Scripts\activate
+uvicorn app:app --reload --port 8000
+```
+
+Terminal 2 — frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000/live-lab](http://localhost:3000/live-lab). The Next.js app proxies `/api/*` to `http://127.0.0.1:8000`.
+
+Click **Run Analysis** on Live Lab (Tasks 2–4), then **View Full Report** for the Dashboard.
+
+```bash
+cd backend
+..\venv\Scripts\python.exe -m pytest -q
+```
+
 ## 📚 Project Status
 
-🚧 **Currently under development**
+🚧 **Currently under development** — Phase 1 (Tasks 1–4) is in place.
 
 The project is being developed as a final-year B.Tech major project by a team of three students.
 
