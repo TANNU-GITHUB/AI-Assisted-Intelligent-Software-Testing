@@ -102,6 +102,22 @@ export async function getSession(sessionId: string): Promise<SessionPayload> {
   return request(`/api/sessions/${sessionId}`);
 }
 
+export async function downloadSessionReport(sessionId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/report`));
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  const reportBlob = await res.blob();
+  const objectUrl = URL.createObjectURL(reportBlob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = `test-report-${sessionId}.html`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function persistSessionId(sessionId: string) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);

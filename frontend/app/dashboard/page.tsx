@@ -11,8 +11,10 @@ import {
   Activity,
   Code2,
   FileText,
+  FileDown,
 } from 'lucide-react';
 import {
+  downloadSessionReport,
   getSession,
   readStoredSessionId,
   type FunctionAnalysis,
@@ -51,6 +53,8 @@ export default function DashboardPage() {
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [downloadingReport, setDownloadingReport] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -88,8 +92,32 @@ export default function DashboardPage() {
                 </span>
               </h1>
             </div>
-            <div className="text-sm text-neutral-500 font-mono">
-              {session?.status || (loading ? 'LOADING' : 'NO SESSION')}
+            <div className="flex flex-col items-start sm:items-end gap-2">
+              <div className="text-sm text-neutral-500 font-mono">
+                {session?.status || (loading ? 'LOADING' : 'NO SESSION')}
+              </div>
+              {session && (
+                <button
+                  type="button"
+                  disabled={downloadingReport}
+                  onClick={async () => {
+                    setDownloadingReport(true);
+                    setReportError(null);
+                    try {
+                      await downloadSessionReport(session.session_id);
+                    } catch (err) {
+                      setReportError(err instanceof Error ? err.message : 'Could not download report.');
+                    } finally {
+                      setDownloadingReport(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:border-yellow-500 hover:text-yellow-400 disabled:cursor-wait disabled:opacity-50"
+                >
+                  <FileDown className="h-4 w-4" />
+                  {downloadingReport ? 'Preparing report…' : 'Download report'}
+                </button>
+              )}
+              {reportError && <p role="alert" className="text-xs text-red-400">{reportError}</p>}
             </div>
           </div>
         </div>

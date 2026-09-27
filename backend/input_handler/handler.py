@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+import difflib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -111,12 +112,15 @@ def create_session(
     folder = session_dir(session_id)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "logs").mkdir(exist_ok=True)
+    regression_dir = folder / "regression"
+    regression_dir.mkdir(exist_ok=True)
     (folder / "tests" / "white_box").mkdir(parents=True, exist_ok=True)
     (folder / "tests" / "black_box").mkdir(parents=True, exist_ok=True)
 
     source_path = folder / "source.py"
     requirements_path = folder / "requirements.txt"
     source_path.write_text(source_code, encoding="utf-8")
+    (regression_dir / "source_snapshot.py").write_text(source_code, encoding="utf-8")
     requirements_path.write_text(requirements_text.strip() + "\n", encoding="utf-8")
 
     payload = {
@@ -136,3 +140,75 @@ def create_session(
         "errors": [],
     }
     return save_session(payload)
+
+
+def update_session_source(session_id: str, source_code: str) -> dict:
+    payload = load_session(session_id)
+    original_filename = (payload.get("inputs") or {}).get("original_filename", "source.py")
+    _validate_source(original_filename, source_code)
+
+    from code_analysis.analyzer import CodeAnalysisError, analyze_source
+
+    try:
+        analysis = analyze_source(source_code)
+    except CodeAnalysisError as exc:
+        raise InputValidationError(str(exc)) from exc
+
+    folder = session_dir(session_id)
+    snapshot_path = folder / "regression" / "source_snapshot.py"
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    previous_source = (
+        snapshot_path.read_text(encoding="utf-8") if snapshot_path.is_file() else ""
+    )
+    source_changed = previous_source != source_code
+    source_diff = ""
+    if source_changed:
+        source_diff = "".join(
+            difflib.unified_diff(
+                previous_source.splitlines(keepends=True),
+                source_code.splitlines(keepends=True),
+                fromfile="stored/source.py",
+                tofile="updated/source.py",
+            )
+        )
+
+    (folder / "source.py").write_text(source_code, encoding="utf-8")
+    payload["code_analysis"] = analysis
+    payload["status"] = (
+        "ready_for_test_generation"
+        if payload.get("requirement_analysis")
+        else "code_analyzed"
+    )
+    save_session(payload)
+
+    if source_changed:
+        from datetime import datetime, timezone
+
+        from input_handler.session_logging import log_session_error
+
+        tests_dir = folder / "tests"
+        existing_tests = list(tests_dir.rglob("test_*.py")) if tests_dir.is_dir() else []
+        regression_result = {"status": "no_existing_tests", "total": 0, "tests": []}
+        execution_completed = not existing_tests
+        if existing_tests:
+            try:
+                from execution.analyzer import analyze_session_execution
+
+                payload = analyze_session_execution(session_id)
+                regression_result = payload.get("test_execution", {})
+                execution_completed = True
+            except Exception as exc:
+                log_session_error(session_id, "source_update.regression", exc)
+                regression_result = {"status": "error", "error": str(exc), "tests": []}
+
+        payload["regression_awareness"] = {
+            "source_changed": True,
+            "source_diff": source_diff,
+            "execution": regression_result,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if execution_completed:
+            snapshot_path.write_text(source_code, encoding="utf-8")
+        save_session(payload)
+
+    return payload

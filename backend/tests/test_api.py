@@ -12,6 +12,51 @@ def test_health():
     assert res.json()["status"] == "ok"
 
 
+def test_report_download(tmp_path, monkeypatch):
+    monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    created = client.post(
+        "/api/sessions",
+        files={"source_file": ("demo.py", b"def add(a, b):\n    return a + b\n", "text/x-python")},
+        data={"requirements_text": "Adding returns the sum.", "run_analysis": "false"},
+    )
+    session_id = created.json()["session_id"]
+
+    report = client.get(f"/api/sessions/{session_id}/report")
+    assert report.status_code == 200
+    assert "text/html" in report.headers["content-type"]
+    assert "Software Test Report" in report.text
+
+
+def test_source_update_runs_existing_tests(tmp_path, monkeypatch):
+    import execution.analyzer
+
+    monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    created = client.post(
+        "/api/sessions",
+        files={"source_file": ("demo.py", b"def value():\n    return 1\n", "text/x-python")},
+        data={"requirements_text": "value returns one.", "run_analysis": "false"},
+    )
+    session_id = created.json()["session_id"]
+    tests_dir = tmp_path / session_id / "tests" / "custom"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "test_value.py").write_text("def test_value(): pass\n", encoding="utf-8")
+    calls = []
+
+    def fake_execution(ran_session_id):
+        calls.append(ran_session_id)
+        return {"session_id": ran_session_id, "test_execution": {"total": 1, "passed": 1, "tests": []}}
+
+    monkeypatch.setattr(execution.analyzer, "analyze_session_execution", fake_execution)
+    updated = client.put(
+        f"/api/sessions/{session_id}/source",
+        json={"source_code": "def value():\n    return 2\n"},
+    )
+
+    assert updated.status_code == 200
+    assert calls == [session_id]
+    assert updated.json()["regression_awareness"]["execution"]["passed"] == 1
+
+
 def test_examples():
     res = client.get("/api/examples")
     assert res.status_code == 200

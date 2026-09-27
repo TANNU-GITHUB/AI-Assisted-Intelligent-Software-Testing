@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -13,11 +14,13 @@ from input_handler.handler import (
     create_session,
     list_sessions,
     session_with_files,
+    update_session_source,
 )
 from pipeline import run_phase1
 from requirement_analysis.analyzer import RequirementAnalysisError, analyze_session_requirements
 from test_generation.other_tests import OtherTestsError, analyze_session_other_tests
 from execution.analyzer import CoverageError, ExecutionError, analyze_session_coverage, analyze_session_execution
+from reporting.analyzer import render_session_report
 app = FastAPI(
     title="AI-Assisted Intelligent Software Testing",
     description="Phase 1 API: input handling, source-code analysis, requirement analysis.",
@@ -98,6 +101,29 @@ async def create_analysis_session(
 def get_session(session_id: str):
     try:
         return session_with_files(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.put("/api/sessions/{session_id}/source")
+def update_source(session_id: str, body: dict):
+    source_code = body.get("source_code")
+    if not isinstance(source_code, str):
+        raise HTTPException(status_code=400, detail="source_code must be a string.")
+    try:
+        update_session_source(session_id, source_code)
+        return session_with_files(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InputValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/sessions/{session_id}/report", response_class=HTMLResponse)
+def get_session_report(session_id: str):
+    try:
+        html = render_session_report(session_id)
+        return HTMLResponse(content=html, headers={"Content-Disposition": "attachment; filename=test-report.html"})
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Report - {{ session_id }}</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; color: #18212b; background: #f3f5f7; }
+    body { margin: 0; padding: 28px; }
+    main { max-width: 1120px; margin: auto; }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    h2 { margin: 28px 0 10px; font-size: 18px; }
+    .meta, .muted { color: #586574; font-size: 13px; }
+    .summary { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 10px; margin-top: 22px; }
+    .metric { background: white; border: 1px solid #dce2e8; border-radius: 6px; padding: 14px; }
+    .metric strong { display: block; font-size: 22px; }
+    .metric span { color: #586574; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #dce2e8; }
+    th, td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid #e7ebef; font-size: 13px; }
+    th { background: #eaf0f4; font-weight: 600; }
+    .pass { color: #146c43; font-weight: 700; }
+    .fail { color: #b42318; font-weight: 700; }
+    .flaky { color: #8a4b08; font-weight: 700; }
+    .warning { padding: 10px 12px; margin: 8px 0; border-left: 3px solid #d97706; background: #fff7e6; color: #713f12; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; font: 12px/1.45 Consolas, monospace; }
+    @media (max-width: 700px) { body { padding: 14px; } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } table { display: block; overflow-x: auto; } }
+    @media print { body { padding: 0; background: white; } .metric, table { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Software Test Report</h1>
+  <div class="meta">Session {{ session_id }}{% if generated_at %} · Generated {{ generated_at }}{% endif %}</div>
+
+  <section class="summary" aria-label="Test summary">
+    <div class="metric"><strong>{{ summary.total }}</strong><span>Total tests</span></div>
+    <div class="metric"><strong class="pass">{{ summary.passed }}</strong><span>Passed</span></div>
+    <div class="metric"><strong class="fail">{{ summary.failed + summary.errors }}</strong><span>Failed / errors</span></div>
+    <div class="metric"><strong>{{ coverage_percent }}</strong><span>Line coverage</span></div>
+    <div class="metric"><strong>{{ summary.flaky }}</strong><span>Flaky tests</span></div>
+  </section>
+
+  <h2>Requirement Traceability</h2>
+  {% if requirements %}
+  <table><thead><tr><th>Requirement</th><th>Test cases</th><th>Result</th></tr></thead><tbody>
+  {% for row in traceability %}
+    <tr><td><strong>{{ row.requirement_id }}</strong><br>{{ row.description }}</td>
+      <td>{% if row.tests %}{% for test in row.tests %}<div>{{ test.test_id }}</div>{% endfor %}{% else %}<span class="muted">No generated test linked</span>{% endif %}</td>
+      <td>{% if not row.tests %}<span class="muted">Not tested</span>{% elif row.failed %}<span class="fail">Fail</span>{% elif row.flaky %}<span class="flaky">Flaky</span>{% else %}<span class="pass">Pass</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<p class="muted">No analyzed requirements are available.</p>{% endif %}
+
+  <h2>Function Coverage</h2>
+  {% if function_coverage %}
+  <table><thead><tr><th>Function</th><th>Line coverage</th><th>Branches</th><th>Coverage status</th></tr></thead><tbody>
+  {% for function in function_coverage %}
+    <tr><td>{{ function.function }}</td><td>{{ function.line_coverage_percent if function.line_coverage_percent is not none else "N/A" }}{% if function.line_coverage_percent is not none %}%{% endif %}</td><td>{{ function.covered_branch_count }}/{{ function.branch_count }}</td><td>{% if function.zero_coverage_branches %}<span class="fail">{{ function.zero_coverage_branches }} uncovered</span>{% else %}<span class="pass">Covered</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% elif coverage_note %}<p class="muted">{{ coverage_note }}</p>{% else %}<p class="muted">No function coverage is available.</p>{% endif %}
+  {% for warning in coverage_warnings %}<div class="warning">{{ warning }}</div>{% endfor %}
+
+  <h2>Defects</h2>
+  {% if defects %}
+  <table><thead><tr><th>Test</th><th>Requirement</th><th>Result</th><th>Error details</th></tr></thead><tbody>
+  {% for test in defects %}<tr><td>{{ test.test_id }}</td><td>{{ test.requirement_id or "Unlinked" }}</td><td class="fail">{{ test.status }}</td><td><pre>{{ test.error_message or "No error details reported." }}</pre></td></tr>{% endfor %}
+  </tbody></table>
+  {% else %}<p class="pass">No failing tests reported.</p>{% endif %}
+</main>
+</body>
+</html>

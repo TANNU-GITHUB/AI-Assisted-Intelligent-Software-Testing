@@ -16,10 +16,12 @@ Requires: pip install pytest-json-report coverage
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 
 from input_handler.handler import load_session, save_session, session_dir
+from input_handler.session_logging import log_session_error
 
 
 class ExecutionError(Exception):
@@ -31,6 +33,64 @@ class CoverageError(Exception):
 
 
 TIMEOUT_SECONDS = 60
+
+
+def _test_result(test: dict) -> dict:
+    status = test.get("outcome", "error")
+    error_message = next(
+        (
+            test.get(phase, {}).get("longrepr")
+            for phase in ("call", "setup", "teardown")
+            if test.get(phase, {}).get("longrepr")
+        ),
+        None,
+    )
+    node_id = test.get("nodeid")
+    match = re.search(r"\[(REQ-\d+)\]", node_id or "")
+    return {
+        "test_id": node_id,
+        "requirement_id": match.group(1) if match else None,
+        "status": status,
+        "duration_seconds": test.get("call", {}).get("duration"),
+        "error_message": error_message if status in {"failed", "error"} else None,
+    }
+
+
+def _run_pytest(folder, targets: list[str], report_path) -> dict:
+    report_path.unlink(missing_ok=True)
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        *targets,
+        "--json-report",
+        f"--json-report-file={report_path}",
+        "-q",
+    ]
+    try:
+        subprocess.run(
+            cmd,
+            cwd=str(folder),
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ExecutionError(
+            f"Test execution timed out after {TIMEOUT_SECONDS} seconds."
+        ) from exc
+    except FileNotFoundError as exc:
+        raise ExecutionError("pytest not found — is it installed in this environment?") from exc
+
+    if not report_path.is_file():
+        raise ExecutionError(
+            "pytest ran but produced no report — is pytest-json-report installed? "
+            "(pip install pytest-json-report)"
+        )
+    try:
+        return json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ExecutionError(f"pytest produced an invalid JSON report: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -45,64 +105,72 @@ def analyze_session_execution(session_id: str) -> dict:
         raise FileNotFoundError(f"No tests directory found for session '{session_id}'.")
 
     report_path = folder / "pytest_report.json"
-
-    cmd = [
-        sys.executable,
-        "-m",
-        "pytest",
-        str(tests_dir),
-        "--json-report",
-        f"--json-report-file={report_path}",
-        "-q",
+    try:
+        first_report = _run_pytest(folder, [str(tests_dir)], report_path)
+    except ExecutionError as exc:
+        log_session_error(session_id, "execution", exc)
+        raise
+    tests = [_test_result(test) for test in first_report.get("tests", [])]
+    failed_ids = [
+        test["test_id"]
+        for test in tests
+        if test["status"] in {"failed", "error"} and test.get("test_id")
     ]
 
-    try:
-        subprocess.run(
-            cmd,
-            cwd=str(folder),
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_SECONDS,
+    retry_by_id = {}
+    if failed_ids:
+        try:
+            retry_report = _run_pytest(
+                folder, failed_ids, folder / "pytest_retry_report.json"
+            )
+        except ExecutionError as exc:
+            log_session_error(session_id, "execution.retry", exc)
+            raise
+        retry_by_id = {
+            item.get("nodeid"): _test_result(item)
+            for item in retry_report.get("tests", [])
+        }
+
+    for test in tests:
+        test["initial_status"] = test["status"]
+        test["initial_error_message"] = test.get("error_message")
+        retry = retry_by_id.get(test.get("test_id"))
+        test["retry_status"] = retry.get("status") if retry else None
+        test["flaky"] = bool(
+            retry and test["status"] in {"failed", "error"} and retry["status"] == "passed"
         )
-    except subprocess.TimeoutExpired as exc:
-        raise ExecutionError(
-            f"Test execution timed out after {TIMEOUT_SECONDS} seconds."
-        ) from exc
-    except FileNotFoundError as exc:
-        raise ExecutionError(
-            "pytest not found — is it installed in this environment?"
-        ) from exc
+        if retry:
+            test["status"] = retry["status"]
+            test["error_message"] = retry.get("error_message")
+            test["duration_seconds"] = (test.get("duration_seconds") or 0) + (
+                retry.get("duration_seconds") or 0
+            )
 
-    if not report_path.is_file():
-        raise ExecutionError(
-            "pytest ran but produced no report — is pytest-json-report installed? "
-            "(pip install pytest-json-report)"
-        )
+        if test["initial_status"] in {"failed", "error"}:
+            log_session_error(
+                session_id,
+                "test_failure",
+                f"{test.get('test_id')}: initial={test['initial_status']}, "
+                f"retry={test.get('retry_status') or 'not run'}, "
+                f"flaky={test['flaky']}; "
+                f"{test.get('initial_error_message') or 'No error details reported.'}",
+            )
 
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-
-    tests = []
-    for test in report.get("tests", []):
-        tests.append(
-            {
-                "test_id": test.get("nodeid"),
-                "status": test.get("outcome"),
-                "duration_seconds": test.get("call", {}).get("duration"),
-                "error_message": (
-                    test.get("call", {}).get("longrepr")
-                    if test.get("outcome") == "failed"
-                    else None
-                ),
-            }
-        )
-
-    summary = report.get("summary", {})
+    summary = first_report.get("summary", {})
+    final_counts = {
+        status: sum(1 for test in tests if test.get("status") == status)
+        for status in ("passed", "failed", "error", "skipped")
+    }
     result = {
-        "total": summary.get("total", 0),
-        "passed": summary.get("passed", 0),
-        "failed": summary.get("failed", 0),
-        "errors": summary.get("error", 0),
-        "duration_seconds": report.get("duration"),
+        "total": len(tests) if tests else summary.get("total", 0),
+        "passed": final_counts["passed"],
+        "failed": final_counts["failed"],
+        "errors": final_counts["error"],
+        "skipped": final_counts["skipped"],
+        "flaky": sum(1 for test in tests if test.get("flaky")),
+        "first_run_failed": summary.get("failed", 0),
+        "first_run_errors": summary.get("error", 0),
+        "duration_seconds": first_report.get("duration"),
         "tests": tests,
     }
 
@@ -216,19 +284,30 @@ def analyze_session_coverage(session_id: str) -> dict:
             json_cmd, cwd=str(folder), capture_output=True, text=True, timeout=TIMEOUT_SECONDS
         )
     except subprocess.TimeoutExpired as exc:
-        raise CoverageError(f"Coverage run timed out after {TIMEOUT_SECONDS} seconds.") from exc
+        error = CoverageError(f"Coverage run timed out after {TIMEOUT_SECONDS} seconds.")
+        log_session_error(session_id, "coverage", error)
+        raise error from exc
     except FileNotFoundError as exc:
-        raise CoverageError(
+        error = CoverageError(
             "coverage not found — is it installed? (pip install coverage)"
-        ) from exc
+        )
+        log_session_error(session_id, "coverage", error)
+        raise error from exc
 
     if not coverage_json_path.is_file():
-        raise CoverageError(
+        error = CoverageError(
             "coverage.py ran but produced no report — check that source.py "
             "is importable as 'source' from the session folder."
         )
+        log_session_error(session_id, "coverage", error)
+        raise error
 
-    coverage_report = json.loads(coverage_json_path.read_text(encoding="utf-8"))
+    try:
+        coverage_report = json.loads(coverage_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        error = CoverageError(f"Could not read coverage report: {exc}")
+        log_session_error(session_id, "coverage", error)
+        raise error from exc
 
     files = coverage_report.get("files", {})
     overall = coverage_report.get("totals", {})
