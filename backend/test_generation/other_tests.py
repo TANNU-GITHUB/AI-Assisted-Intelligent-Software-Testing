@@ -135,7 +135,7 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
     lines.append("")
 
     for i, case in enumerate(cases, start=1):
-        func_name = case.get("function_name") or case.get("callee") or "target"
+        func_name = case.get("function_name") or case.get("caller") or "target"
         test_name = f"test_{test_type}_{func_name}_case{i}"
         input_kwargs = case.get("input", {}) or {}
 
