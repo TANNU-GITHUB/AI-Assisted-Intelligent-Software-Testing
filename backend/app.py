@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+
 from code_analysis.analyzer import CodeAnalysisError, analyze_session
 from config import ROOT_DIR
 from input_handler.handler import (
@@ -15,7 +16,8 @@ from input_handler.handler import (
 )
 from pipeline import run_phase1
 from requirement_analysis.analyzer import RequirementAnalysisError, analyze_session_requirements
-
+from test_generation.other_tests import OtherTestsError, analyze_session_other_tests
+from execution.analyzer import CoverageError, ExecutionError, analyze_session_coverage, analyze_session_execution
 app = FastAPI(
     title="AI-Assisted Intelligent Software Testing",
     description="Phase 1 API: input handling, source-code analysis, requirement analysis.",
@@ -120,3 +122,37 @@ def run_requirement_analysis(session_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RequirementAnalysisError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.post("/api/sessions/{session_id}/other-tests")
+def run_other_tests(session_id: str):
+    try:
+        analyze_session_other_tests(session_id)
+        return session_with_files(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except OtherTestsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.post("/api/sessions/{session_id}/execute-tests")
+def run_execute_tests(session_id: str):
+    try:
+        analyze_session_execution(session_id)
+        return session_with_files(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExecutionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    
+@app.post("/api/sessions/{session_id}/coverage")
+def run_coverage(session_id: str):
+    try:
+        analyze_session_coverage(session_id)
+        return session_with_files(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CoverageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    
+    
+    
+    
