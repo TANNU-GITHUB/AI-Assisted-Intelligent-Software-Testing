@@ -36,6 +36,22 @@ export type SessionPayload = {
     model?: string;
   } | null;
   errors?: unknown[];
+  white_box_tests?: {
+    test_count?: number;
+    function_count?: number;
+    files_written?: string[];
+    functions?: {
+      function: string;
+      status: string;
+      source?: string;
+      case_count?: number;
+      cases?: {
+        case_id: string;
+        description: string;
+        requirement_id?: string;
+      }[];
+    }[];
+  } | null;
 };
 
 function apiUrl(path: string): string {
@@ -96,6 +112,10 @@ export async function runCodeAnalysis(sessionId: string): Promise<SessionPayload
 
 export async function runRequirementAnalysis(sessionId: string): Promise<SessionPayload> {
   return request(`/api/sessions/${sessionId}/requirement-analysis`, { method: 'POST' });
+}
+
+export async function runWhiteBoxTests(sessionId: string): Promise<SessionPayload> {
+  return request(`/api/sessions/${sessionId}/white-box-tests`, { method: 'POST' });
 }
 
 export async function getSession(sessionId: string): Promise<SessionPayload> {

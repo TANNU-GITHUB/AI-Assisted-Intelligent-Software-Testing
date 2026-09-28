@@ -122,3 +122,18 @@ def test_requirement_analysis_endpoint(tmp_path, monkeypatch):
     analyzed = client.post(f"/api/sessions/{session_id}/requirement-analysis")
     assert analyzed.status_code == 200
     assert analyzed.json()["requirement_analysis"]["requirements"][0]["requirement_id"] == "REQ-01"
+
+
+def test_white_box_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+
+    res = client.post(
+        "/api/sessions",
+        files={"source_file": ("demo.py", b"def add(a, b):\n    return a + b\n", "text/x-python")},
+        data={"requirements_text": "Adding two numbers returns their sum.", "run_analysis": "false"},
+    )
+    session_id = res.json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/code-analysis")
+    generated = client.post(f"/api/sessions/{session_id}/white-box-tests")
+    assert generated.status_code == 200
+    assert generated.json()["white_box_tests"]["test_count"] >= 1

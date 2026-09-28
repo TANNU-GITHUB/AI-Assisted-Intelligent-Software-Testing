@@ -21,6 +21,7 @@ import {
   persistSessionId,
   runCodeAnalysis,
   runRequirementAnalysis,
+  runWhiteBoxTests,
   type FunctionAnalysis,
   type SessionPayload,
   type StructuredRequirement,
@@ -59,6 +60,7 @@ const analysisStages = [
   { label: 'Saving source and requirements...', icon: FileText },
   { label: 'Analyzing source code...', icon: Code2 },
   { label: 'Analyzing requirements with Gemini...', icon: FileText },
+  { label: 'Generating white-box tests...', icon: Code2 },
 ];
 
 export default function LiveLabPage() {
@@ -114,9 +116,13 @@ export default function LiveLabPage() {
       setStageIndex(2);
       const withReqs = await runRequirementAnalysis(created.session_id);
       latest = withReqs;
-      persistSessionId(withReqs.session_id);
       setSession(withReqs);
       setStageIndex(3);
+      const withWhiteBox = await runWhiteBoxTests(created.session_id);
+      latest = withWhiteBox;
+      persistSessionId(withWhiteBox.session_id);
+      setSession(withWhiteBox);
+      setStageIndex(4);
       setPhase('complete');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed.');
@@ -139,6 +145,7 @@ export default function LiveLabPage() {
   const functions: FunctionAnalysis[] = session?.code_analysis?.functions || [];
   const structuredReqs: StructuredRequirement[] =
     session?.requirement_analysis?.requirements || [];
+  const whiteBoxTests = session?.white_box_tests?.test_cases?.length || 0;
 
   return (
     <>
@@ -358,6 +365,35 @@ export default function LiveLabPage() {
                   </motion.div>
                 ))}
               </AnimatePresence>
+            </div>
+          </div>
+        )}
+        {whiteBoxTests > 0 && (
+          <div className="max-w-7xl mx-auto mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white">White-Box Tests (Task 5)</h3>
+              <span className="flex items-center gap-1.5 text-green-500 text-sm">
+                <CheckCircle2 className="w-4 h-4" />
+                {whiteBoxTests} generated cases
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(session?.white_box_tests?.functions || [])
+                .filter((fn) => fn.status === 'generated')
+                .map((fn) => (
+                  <motion.div
+                    key={fn.function}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 rounded-xl border border-neutral-800 bg-neutral-900/50"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-mono text-xs text-yellow-500">{fn.function}</span>
+                      <span className="text-xs text-neutral-500">{fn.source}</span>
+                    </div>
+                    <p className="text-sm text-white">{fn.case_count} pytest cases</p>
+                  </motion.div>
+                ))}
             </div>
           </div>
         )}

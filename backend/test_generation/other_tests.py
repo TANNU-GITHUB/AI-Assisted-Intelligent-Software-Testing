@@ -3,8 +3,7 @@ converted into real pytest files, plus a persisted regression suite.
 Matches the session-manifest pattern used by code_analysis/analyzer.py
 and requirement_analysis/analyzer.py.
 
-Unit tests are intentionally left out — they reuse Task 5's (white-box)
-output, which doesn't exist yet. Add that branch once white_box.py lands.
+Unit tests reuse Task 5 white-box pytest output under `tests/white_box/`.
 """
 
 from __future__ import annotations

@@ -126,37 +126,6 @@ This allows the generated test suite to be iteratively improved.
 
 * SQLite
 
-## 👥 Team
-
-| Member         | Responsibility                           |
-| -------------- | ---------------------------------------- |
-| Aayushi Sharma | Code Analysis & Testing Engine           |
-| Anushka Sharma | AI Test Generation & Requirement Mapping |
-| Tannu Bagadia  | Backend, Frontend & Reporting            |
-
-## 📅 Project Timeline
-
-The initial implementation is planned for approximately 8 weeks.
-
-### Phase 1
-
-Project setup and code/requirement analysis
-
-### Phase 2
-
-Test generation and execution
-
-### Phase 3
-
-Coverage-guided test improvement
-
-### Phase 4
-
-Mutation testing and reporting
-
-### Phase 5
-
-Integration, evaluation and documentation
 
 ## 📊 Evaluation Metrics
 
@@ -170,10 +139,6 @@ The system will be evaluated using:
 * Number of defects detected
 * Test generation efficiency
 * Redundant test cases
-
-## 🚀 Phase 1 (Tasks 1–4) — Next.js frontend + FastAPI backend
-
-The website UI is in `frontend/` (Next.js). The analysis engine is in `backend/` (FastAPI). Streamlit from the implementation guide is not used; the existing Next.js Live Lab and Dashboard talk to the Python API.
 
 ### Where to paste the Gemini API key
 
@@ -214,7 +179,7 @@ cd backend
 
 ## 📚 Project Status
 
-🚧 **Currently under development** — Phase 1 (Tasks 1–4) is in place.
+
 
 The project is being developed as a final-year B.Tech major project by a team of three students.
 
