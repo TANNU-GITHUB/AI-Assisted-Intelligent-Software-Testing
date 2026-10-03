@@ -170,7 +170,18 @@ npm run dev
 
 Open [http://localhost:3000/live-lab](http://localhost:3000/live-lab). The Next.js app proxies `/api/*` to `http://127.0.0.1:8000`.
 
-Click **Run Analysis** on Live Lab (Tasks 2–4), then **View Full Report** for the Dashboard.
+Click **Run Analysis** on Live Lab (Tasks 2–5, execution, coverage), then **View Full Report** on the Dashboard.
+
+### Jev (semantic UI testing)
+
+The frontend includes optional [Jev](https://www.shipwithjev.com/builds/playwright-jev) + Playwright checks under `frontend/e2e/`.
+
+1. Copy `frontend/.env.example` → `frontend/.env` and set `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`.
+2. Install browsers once: `cd frontend && npx playwright install chromium`
+3. With backend running, set `E2E_BACKEND_URL=http://127.0.0.1:8000`.
+4. Run:
+   - `npm run test:e2e:smoke` — basic UI/API smoke (no Jev key required for UI tests)
+   - `npm run test:e2e:jev` — semantic Live Lab checks (requires Jev key + `playwright-jev`)
 
 ```bash
 cd backend

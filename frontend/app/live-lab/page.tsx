@@ -22,6 +22,9 @@ import {
   runCodeAnalysis,
   runRequirementAnalysis,
   runWhiteBoxTests,
+  runOtherTests,
+  runExecuteTests,
+  runCoverage,
   type FunctionAnalysis,
   type SessionPayload,
   type StructuredRequirement,
@@ -61,6 +64,9 @@ const analysisStages = [
   { label: 'Analyzing source code...', icon: Code2 },
   { label: 'Analyzing requirements with Gemini...', icon: FileText },
   { label: 'Generating white-box tests...', icon: Code2 },
+  { label: 'Generating integration & negative tests...', icon: FileText },
+  { label: 'Executing generated tests...', icon: Cpu },
+  { label: 'Measuring coverage...', icon: Cpu },
 ];
 
 export default function LiveLabPage() {
@@ -120,9 +126,32 @@ export default function LiveLabPage() {
       setStageIndex(3);
       const withWhiteBox = await runWhiteBoxTests(created.session_id);
       latest = withWhiteBox;
-      persistSessionId(withWhiteBox.session_id);
       setSession(withWhiteBox);
       setStageIndex(4);
+
+      try {
+        const withOther = await runOtherTests(created.session_id);
+        latest = withOther;
+        setSession(withOther);
+      } catch (otherErr) {
+        setError(
+          otherErr instanceof Error
+            ? `Other tests skipped: ${otherErr.message}`
+            : 'Other tests skipped.'
+        );
+      }
+      setStageIndex(5);
+
+      const executed = await runExecuteTests(created.session_id);
+      latest = executed;
+      setSession(executed);
+      setStageIndex(6);
+
+      const covered = await runCoverage(created.session_id);
+      latest = covered;
+      persistSessionId(covered.session_id);
+      setSession(covered);
+      setStageIndex(7);
       setPhase('complete');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed.');
@@ -272,7 +301,7 @@ export default function LiveLabPage() {
             <p className="text-sm text-red-400 font-mono text-center max-w-2xl">{error}</p>
           )}
           {phase === 'idle' && (
-            <LabButton size="lg" onClick={runAnalysis} disabled={backendUp === false}>
+            <LabButton size="lg" onClick={runAnalysis} disabled={backendUp === false} data-testid="run-analysis">
               <Zap className="w-4 h-4 fill-current" />
               Run Analysis
             </LabButton>

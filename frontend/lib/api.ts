@@ -52,6 +52,22 @@ export type SessionPayload = {
       }[];
     }[];
   } | null;
+  test_execution?: {
+    total?: number;
+    passed?: number;
+    failed?: number;
+    errors?: number;
+    flaky?: number;
+    tests?: { test_id?: string; status?: string; requirement_id?: string | null }[];
+  } | null;
+  coverage?: {
+    overall_line_coverage_percent?: number;
+    overall_branch_coverage_percent?: number;
+  } | null;
+  other_tests?: {
+    integration_count?: number;
+    negative_count?: number;
+  } | null;
 };
 
 function apiUrl(path: string): string {
@@ -116,6 +132,18 @@ export async function runRequirementAnalysis(sessionId: string): Promise<Session
 
 export async function runWhiteBoxTests(sessionId: string): Promise<SessionPayload> {
   return request(`/api/sessions/${sessionId}/white-box-tests`, { method: 'POST' });
+}
+
+export async function runOtherTests(sessionId: string): Promise<SessionPayload> {
+  return request(`/api/sessions/${sessionId}/other-tests`, { method: 'POST' });
+}
+
+export async function runExecuteTests(sessionId: string): Promise<SessionPayload> {
+  return request(`/api/sessions/${sessionId}/execute-tests`, { method: 'POST' });
+}
+
+export async function runCoverage(sessionId: string): Promise<SessionPayload> {
+  return request(`/api/sessions/${sessionId}/coverage`, { method: 'POST' });
 }
 
 export async function getSession(sessionId: string): Promise<SessionPayload> {

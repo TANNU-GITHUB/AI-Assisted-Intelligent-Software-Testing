@@ -44,9 +44,14 @@ function summarize(session: SessionPayload | null) {
       : Math.round(
           (functions.reduce((sum, fn) => sum + fn.cyclomatic_complexity, 0) / functions.length) * 10
         ) / 10;
+  const execution = session?.test_execution;
+  const coveragePct = session?.coverage?.overall_line_coverage_percent;
   const completeness =
-    (functions.length ? 0.5 : 0) + (reqs.length ? 0.5 : 0);
-  return { functions, reqs, branches, complexity, completeness };
+    (functions.length ? 0.25 : 0) +
+    (reqs.length ? 0.25 : 0) +
+    ((session?.white_box_tests?.test_count || 0) > 0 ? 0.25 : 0) +
+    (execution?.total ? 0.25 : 0);
+  return { functions, reqs, branches, complexity, completeness, execution, coveragePct };
 }
 
 export default function DashboardPage() {
@@ -69,7 +74,8 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const { functions, reqs, branches, complexity, completeness } = summarize(session);
+  const { functions, reqs, branches, complexity, completeness, execution, coveragePct } =
+    summarize(session);
 
   return (
     <>
@@ -82,7 +88,7 @@ export default function DashboardPage() {
                   AI TESTING COMMAND CENTER
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-mono">
-                  PHASE 1 · TASKS 1–4
+                  FULL PIPELINE
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-bold text-white">
@@ -136,10 +142,15 @@ export default function DashboardPage() {
 
         <div className="max-w-7xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
-            { label: 'FUNCTIONS', value: String(functions.length), icon: Code2, color: 'text-yellow-500' },
-            { label: 'BRANCHES', value: String(branches), icon: Activity, color: 'text-yellow-500' },
-            { label: 'AVG COMPLEXITY', value: String(complexity), icon: Target, color: 'text-yellow-500' },
-            { label: 'REQUIREMENTS', value: String(reqs.length), icon: FileText, color: 'text-green-500' },
+            { label: 'TESTS RUN', value: String(execution?.total ?? 0), icon: Activity, color: 'text-yellow-500' },
+            { label: 'PASSED', value: String(execution?.passed ?? 0), icon: CheckCircle2, color: 'text-green-500' },
+            { label: 'FAILED', value: String(execution?.failed ?? 0), icon: CheckCircle2, color: 'text-red-500' },
+            {
+              label: 'LINE COVERAGE',
+              value: coveragePct != null ? `${coveragePct}%` : '—',
+              icon: Target,
+              color: 'text-yellow-500',
+            },
           ].map((metric, i) => (
             <motion.div
               key={metric.label}
@@ -166,7 +177,7 @@ export default function DashboardPage() {
             <div className="h-[400px] relative">
               <CoverageSphereCanvas coverage={completeness} />
               <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                <span className="text-xs text-neutral-400">Code + requirements analyzed</span>
+                <span className="text-xs text-neutral-400">Pipeline completeness</span>
                 <span className="font-mono text-2xl font-bold text-yellow-500">
                   {Math.round(completeness * 100)}%
                 </span>
