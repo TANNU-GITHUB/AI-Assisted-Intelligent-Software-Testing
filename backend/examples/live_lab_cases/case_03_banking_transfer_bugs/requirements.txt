@@ -1,0 +1,18 @@
+Accounts must never allow a balance below zero after any withdrawal or transfer.
+Transfer amounts must be strictly positive.
+Duplicate transfer IDs in the same calendar day must be rejected.
+Daily outgoing transfer sum per account must not exceed 10,000 currency units.
+Withdrawals require sufficient available balance including pending holds.
+Pending holds reduce available balance until released or captured.
+Releasing a hold restores available balance without changing ledger balance.
+Capturing a hold moves funds out and reduces both ledger and available balance.
+Internal transfers between two accounts must debit and credit the same amount atomically.
+External outbound transfers charge a flat 2 currency unit fee deducted from sender.
+External inbound transfers have no fee.
+Account IDs must be non-empty strings of at least 6 characters.
+Transfer IDs must be unique globally for the lifetime of the system.
+Negative transfer amounts raise ValueError.
+Zero amount transfers raise ValueError.
+Self-transfers to the same account ID are forbidden.
+Currency is always USD; multi-currency is out of scope but amounts must round to cents.
+Audit log must record every state change (not implemented in source — requirement for traceability gap).

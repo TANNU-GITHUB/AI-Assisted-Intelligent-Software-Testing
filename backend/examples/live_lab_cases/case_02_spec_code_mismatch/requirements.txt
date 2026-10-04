@@ -1,0 +1,19 @@
+Members receive a 15% discount on each line item (not 10%).
+Non-members receive no line-item discount.
+Sales tax of 8% applies to the amount after all line discounts (post-discount subtotal).
+Tax must not be calculated on pre-discount prices.
+Orders with post-discount subtotal strictly greater than 300 receive free shipping.
+Orders at or below 300 subtotal pay 12 currency units shipping.
+Members with final total strictly greater than 400 receive an extra 25 currency units off after tax and shipping.
+Empty carts must total exactly zero.
+Negative prices raise ValueError.
+Zero quantity raises ValueError.
+SKU must be non-empty alphanumeric up to 32 characters.
+Maximum 50 distinct line items.
+Bulk tier: if any single SKU quantity is 10 or more, apply an extra 5% off that SKU line only.
+Coupons prefixed VIP remove shipping entirely regardless of subtotal.
+International orders (country code not US) add a flat 30 currency units handling fee.
+Country code must be exactly two uppercase letters when provided.
+Gift messages longer than 200 characters are rejected with ValueError.
+Rounding: all displayed totals round to two decimal places using standard half-up rounding.
+Refunds must restore loyalty points proportionally to returned value.

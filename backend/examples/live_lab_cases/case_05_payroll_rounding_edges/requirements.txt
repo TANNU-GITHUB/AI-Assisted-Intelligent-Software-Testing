@@ -1,0 +1,19 @@
+Regular hours are paid at the base hourly rate for each hour up to and including 40 hours per week.
+Overtime hours are hours worked strictly beyond 40 per week, paid at 1.5 times the base rate.
+All monetary amounts must use banker's rounding (round half to even) to two decimal places.
+Gross pay equals regular pay plus overtime pay minus deductions.
+Deductions cannot reduce net pay below zero.
+Employees with zero hours worked receive zero gross pay.
+Negative hours or negative rates raise ValueError.
+Bonus is a flat 100 currency units when hours worked is at least 45 in a week.
+Minimum wage floor: net pay after statutory deduction must not fall below 500 for full-time (>=40 hours).
+Statutory deduction is 10% of gross unless gross is zero.
+Part-time employees (under 40 hours) do not receive the bonus.
+Time and a half applies to each overtime hour; overtime fraction hours are allowed.
+Employer tax is 6.2% of gross and is not deducted from employee net (reporting only).
+At exactly 40.0 hours, all pay is regular rate with zero overtime.
+At 40.5 hours, 0.5 hours must be overtime at 1.5x.
+At 41.0 hours, 1.0 hour must be overtime at 1.5x (not 0.0 overtime).
+Banker's rounding: 2.005 rounds to 2.00, 2.015 rounds to 2.02.
+Payslip net must never exceed gross.
+Weekly batch totals must equal sum of individual payslip gross values within one cent tolerance.

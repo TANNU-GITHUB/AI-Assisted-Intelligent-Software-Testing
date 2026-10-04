@@ -1,0 +1,25 @@
+Members receive a 10% discount on each line item before tax is calculated.
+Non-members pay full item price before tax.
+Sales tax of 7.5% applies to the taxable subtotal after discounts.
+Orders with a post-tax total strictly greater than 500 receive an additional 20 currency units off for members only.
+Empty carts must produce a checkout total of exactly zero.
+Negative unit prices must be rejected with ValueError.
+Zero quantity line items must be rejected with ValueError.
+Each line item must have a non-empty product SKU string.
+Maximum 100 line items per order.
+Shipping is flat 15 currency units unless the post-discount subtotal exceeds 250, then shipping is free.
+Gift wrap adds 5 currency units per wrapped line.
+Coupon codes starting with SAVE apply a flat 10 currency units off the order once per checkout.
+Invalid coupon codes must not change the total.
+Loyalty points redeem at 100 points equals 1 currency unit; redemption cannot exceed half the order subtotal.
+Point balances cannot go negative after redemption.
+Refunds credit the original payment method proportionally to line quantities returned.
+Partial returns cannot exceed the original purchased quantity per SKU.
+Order status must transition from draft to confirmed only when total is non-negative and at least one line exists.
+Cancelled orders zero out totals but retain line history for audit.
+High-value carts containing any single item priced above 1000 require manager approval (approval flag not in source — traceability gap).
+International orders must collect harmonized sales tax tables (not implemented in source).
+Email receipts must be sent within 60 seconds of confirmation (not implemented in source).
+Inventory reservation must occur at confirm time (not implemented in source).
+Promotional stacking: member discount applies before coupons, never after tax.
+Reporting API must expose subtotal, tax, shipping, and loyalty components separately.

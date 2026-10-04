@@ -1,0 +1,22 @@
+All user authentication must use OAuth 2.0 with PKCE; no password storage in this service.
+Personal data at rest must be encrypted with AES-256-GCM.
+Every transform invocation must write an immutable audit log entry with user ID and timestamp.
+The service shall maintain 99.99% monthly uptime SLA.
+PII fields must support GDPR right-to-erasure within 72 hours of request.
+Data residency: EU customer records must stay in EU regions only.
+Rate limiting: 100 requests per minute per API key.
+Secrets must rotate every 30 days via HSM-backed vault.
+All outbound integrations must use mutual TLS.
+Observability: 95th percentile latency under 200ms for transform endpoints.
+The batch pipeline must checkpoint every 1000 records for disaster recovery.
+Role-based access control with least privilege is mandatory for admin APIs.
+None of the above are implemented in source.py — tests should flag gaps but often do not.
+
+Functional requirements that DO map to code:
+CSV column names must be normalized to snake_case.
+Null-like strings (empty, NA, null) become Python None in parsed rows.
+Numeric strings parse to float when possible else remain strings.
+Duplicate column names after normalization must raise ValueError.
+Maximum row width is 512 columns.
+JSON export must use UTF-8 and include a schema_version field.
+Aggregations skip None values when computing numeric means.
