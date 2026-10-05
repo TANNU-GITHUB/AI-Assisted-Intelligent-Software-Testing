@@ -8,6 +8,7 @@ import re
 from typing import Any, Callable
 
 from config import GEMINI_API_KEY, GEMINI_MODEL
+from gemini_client import generate_text
 from input_handler.handler import load_session, save_session, session_dir
 from input_handler.session_logging import log_session_error
 from test_generation.prompts_white_box import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
@@ -32,21 +33,7 @@ def _extract_json(text: str) -> Any:
 
 
 def _call_gemini(prompt: str, api_key: str, model_name: str) -> str:
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=model_name,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.2,
-            response_mime_type="application/json",
-        ),
-    )
-    text = (response.text or "").strip()
-    if not text:
-        raise WhiteBoxError("Gemini returned an empty response.")
+    text, _model_used = generate_text(prompt, api_key=api_key, model_name=model_name)
     return text
 
 
@@ -320,7 +307,10 @@ def _write_pytest_file(
             lines.append(f"    assert {function_name}(**{inputs!r}) == {expected!r}")
         lines.append("")
 
-    out_file.write_text("\n".join(lines), encoding="utf-8")
+    content = "\n".join(lines)
+    tmp = out_file.with_suffix(out_file.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(out_file)
     return str(out_file)
 
 
@@ -351,6 +341,7 @@ def analyze_session_white_box(session_id: str) -> dict:
 
     key = GEMINI_API_KEY.strip()
     model = GEMINI_MODEL
+    llm_available = bool(key and key != "your_gemini_api_key_here")
     try:
         for fn in functions:
             if fn.get("is_async"):
@@ -372,7 +363,7 @@ def analyze_session_white_box(session_id: str) -> dict:
             branches = fn.get("branches") or []
             source = "fallback"
             try:
-                if key and key != "your_gemini_api_key_here":
+                if llm_available:
                     cases = _generate_cases_with_llm(
                         function_name=name,
                         function_source=snippet,
@@ -385,6 +376,7 @@ def analyze_session_white_box(session_id: str) -> dict:
                 else:
                     cases = _fallback_cases(fn, module_source)
             except Exception:
+                llm_available = False
                 cases = _fallback_cases(fn, module_source)
                 source = "fallback"
 

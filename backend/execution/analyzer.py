@@ -16,6 +16,7 @@ Requires: pip install pytest-json-report coverage
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -32,7 +33,104 @@ class CoverageError(Exception):
     """Raised when the coverage measurement step fails."""
 
 
-TIMEOUT_SECONDS = 60
+TIMEOUT_SECONDS = 120
+
+
+def _coverage_subprocess_env(folder) -> dict[str, str]:
+    env = os.environ.copy()
+    folder_str = str(folder)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        folder_str if not existing else f"{folder_str}{os.pathsep}{existing}"
+    )
+    return env
+
+
+def _pytest_target_arg(folder, target) -> str:
+    try:
+        return str(target.relative_to(folder))
+    except ValueError:
+        return str(target)
+
+
+def _run_coverage_for_tests(
+    folder,
+    pytest_target,
+    coverage_json_path,
+) -> tuple[bool, str]:
+    """
+    Run coverage.py + pytest under the session folder.
+    Returns (report_written, diagnostic_snippet).
+    """
+    coverage_data_file = folder / ".coverage"
+    coverage_data_file.unlink(missing_ok=True)
+    coverage_json_path.unlink(missing_ok=True)
+
+    env = _coverage_subprocess_env(folder)
+    pytest_arg = _pytest_target_arg(folder, pytest_target)
+
+    run_cmd = [
+        sys.executable,
+        "-m",
+        "coverage",
+        "run",
+        "--branch",
+        "--data-file=.coverage",
+        "--source=source",
+        "-m",
+        "pytest",
+        pytest_arg,
+        "-q",
+    ]
+    json_cmd = [
+        sys.executable,
+        "-m",
+        "coverage",
+        "json",
+        "--data-file=.coverage",
+        "-o",
+        "coverage.json",
+    ]
+
+    run_result = subprocess.run(
+        run_cmd,
+        cwd=str(folder),
+        capture_output=True,
+        text=True,
+        timeout=TIMEOUT_SECONDS,
+        env=env,
+    )
+    json_result = subprocess.run(
+        json_cmd,
+        cwd=str(folder),
+        capture_output=True,
+        text=True,
+        timeout=TIMEOUT_SECONDS,
+        env=env,
+    )
+
+    if coverage_json_path.is_file():
+        return True, ""
+
+    chunks = [
+        run_result.stderr,
+        run_result.stdout,
+        json_result.stderr,
+        json_result.stdout,
+    ]
+    detail = "\n".join(part.strip() for part in chunks if part and part.strip())
+    if "No module named coverage" in detail:
+        detail = (
+            "The Python running the API does not have coverage installed "
+            f"({sys.executable}). Activate the project venv and "
+            "pip install -r requirements.txt."
+        )
+    elif "No data to report" in detail or "no-data-collected" in detail.lower():
+        detail = (
+            "Tests did not import source.py (often pytest collection failed). "
+            f"Pytest exit code: {run_result.returncode}. {detail}"
+        )
+    return False, detail[-2000:]
 
 
 def _test_result(test: dict) -> dict:
@@ -250,39 +348,22 @@ def analyze_session_coverage(session_id: str) -> dict:
     if not tests_dir.is_dir():
         raise FileNotFoundError(f"No tests directory found for session '{session_id}'.")
 
+    source_path = folder / "source.py"
+    if not source_path.is_file():
+        raise FileNotFoundError(f"source.py not found for session '{session_id}'.")
+
     coverage_json_path = folder / "coverage.json"
-    coverage_data_file = folder / ".coverage"
+    pytest_targets = [tests_dir]
+    white_box_dir = tests_dir / "white_box"
+    if white_box_dir.is_dir():
+        pytest_targets.append(white_box_dir)
 
-    run_cmd = [
-        sys.executable,
-        "-m",
-        "coverage",
-        "run",
-        "--branch",
-        f"--data-file={coverage_data_file}",
-        "--source=source",
-        "-m",
-        "pytest",
-        str(tests_dir),
-        "-q",
-    ]
-    json_cmd = [
-        sys.executable,
-        "-m",
-        "coverage",
-        "json",
-        f"--data-file={coverage_data_file}",
-        "-o",
-        str(coverage_json_path),
-    ]
-
+    diagnostic = ""
     try:
-        subprocess.run(
-            run_cmd, cwd=str(folder), capture_output=True, text=True, timeout=TIMEOUT_SECONDS
-        )
-        subprocess.run(
-            json_cmd, cwd=str(folder), capture_output=True, text=True, timeout=TIMEOUT_SECONDS
-        )
+        for target in pytest_targets:
+            ok, diagnostic = _run_coverage_for_tests(folder, target, coverage_json_path)
+            if ok:
+                break
     except subprocess.TimeoutExpired as exc:
         error = CoverageError(f"Coverage run timed out after {TIMEOUT_SECONDS} seconds.")
         log_session_error(session_id, "coverage", error)
@@ -295,10 +376,16 @@ def analyze_session_coverage(session_id: str) -> dict:
         raise error from exc
 
     if not coverage_json_path.is_file():
-        error = CoverageError(
-            "coverage.py ran but produced no report — check that source.py "
-            "is importable as 'source' from the session folder."
+        hint = (
+            "Ensure source.py is importable as 'source' from the session folder "
+            "and pytest can collect tests under sessions/<id>/tests/. "
+            "If you use uvicorn --reload, exclude sessions/ from reload so test "
+            "files are not rewritten mid-run."
         )
+        message = f"Coverage produced no report. {hint}"
+        if diagnostic:
+            message = f"{message} Details: {diagnostic}"
+        error = CoverageError(message)
         log_session_error(session_id, "coverage", error)
         raise error
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -147,7 +147,7 @@ def run_requirement_analysis(session_id: str):
         return session_with_files(session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except RequirementAnalysisError as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @app.post("/api/sessions/{session_id}/white-box-tests")
@@ -190,7 +190,32 @@ def run_coverage(session_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CoverageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    
-    
-    
-    
+
+
+def _register_gemini_exception_handlers(application: FastAPI) -> None:
+    try:
+        from google.genai import errors as genai_errors
+    except ImportError:
+        return
+
+    @application.exception_handler(genai_errors.ServerError)
+    async def _gemini_server_error(_request, exc: genai_errors.ServerError):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": (
+                    "Gemini is temporarily unavailable (high demand or outage). "
+                    "Wait a minute and retry — the client retries and uses fallback models."
+                ),
+            },
+        )
+
+    @application.exception_handler(genai_errors.ClientError)
+    async def _gemini_client_error(_request, exc: genai_errors.ClientError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Gemini API error: {exc}"},
+        )
+
+
+_register_gemini_exception_handlers(app)

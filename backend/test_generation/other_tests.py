@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from config import GEMINI_API_KEY, GEMINI_MODEL
+from gemini_client import generate_text
 from input_handler.handler import load_session, save_session, session_dir
 from input_handler.session_logging import log_session_error
 
@@ -26,13 +27,8 @@ class OtherTestsError(Exception):
 def _call_llm(prompt: str) -> str:
     if not GEMINI_API_KEY:
         raise OtherTestsError("GEMINI_API_KEY not set in backend/.env")
-
-    import google.generativeai as genai
-
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(GEMINI_MODEL)
-    response = model.generate_content(prompt)
-    return response.text
+    text, _model = generate_text(prompt, api_key=GEMINI_API_KEY, model_name=GEMINI_MODEL)
+    return text
 
 
 def _parse_json_response(raw_text: str) -> list[dict]:
@@ -87,7 +83,97 @@ Source code:
 Return ONLY a JSON array, no markdown, no explanation. Each item:
 {{"caller": "...", "callee": "...", "input": {{...}}, "expected_output": ..., "test_type": "integration", "requirement_id": "REQ-01"}}
 """
-    return _parse_json_response(_call_llm(prompt))
+    try:
+        return _parse_json_response(_call_llm(prompt))
+    except Exception:
+        return _fallback_integration_tests(source_code, call_pairs, requirement_ids)
+
+
+def _default_inputs_for_function(node: ast.FunctionDef) -> dict:
+    inputs: dict = {}
+    for arg in node.args.args:
+        if arg.arg in {"self", "cls"}:
+            continue
+        annotation = ast.unparse(arg.annotation) if arg.annotation else ""
+        lowered = annotation.lower()
+        if "bool" in lowered:
+            inputs[arg.arg] = False
+        elif "list" in lowered:
+            inputs[arg.arg] = []
+        elif "int" in lowered:
+            inputs[arg.arg] = 0
+        elif "float" in lowered:
+            inputs[arg.arg] = 0.0
+        elif "str" in lowered:
+            inputs[arg.arg] = "x"
+        else:
+            inputs[arg.arg] = 0
+    return inputs
+
+
+def _fallback_integration_tests(
+    source_code: str, call_pairs: list[dict], requirement_ids: list[str]
+) -> list[dict]:
+    req = requirement_ids[0] if requirement_ids else "REQ-01"
+    namespace: dict = {}
+    try:
+        exec(compile(source_code, "<source>", "exec"), namespace)
+    except Exception:
+        namespace = {}
+    cases: list[dict] = []
+    tree = ast.parse(source_code)
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    seen: set[str] = set()
+    for pair in call_pairs:
+        caller = pair.get("caller")
+        if not caller or caller in seen or caller not in functions:
+            continue
+        seen.add(caller)
+        inputs = _default_inputs_for_function(functions[caller])
+        target = namespace.get(caller)
+        expected = None
+        if callable(target):
+            try:
+                expected = target(**inputs)
+            except Exception:
+                continue
+        cases.append(
+            {
+                "caller": caller,
+                "callee": pair.get("callee"),
+                "input": inputs,
+                "expected_output": expected,
+                "test_type": "integration",
+                "requirement_id": req,
+            }
+        )
+    return cases
+
+
+def _fallback_negative_tests(source_code: str, requirement_ids: list[str]) -> list[dict]:
+    req = requirement_ids[0] if requirement_ids else "REQ-01"
+    tree = ast.parse(source_code)
+    cases: list[dict] = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        required = [arg.arg for arg in node.args.args if arg.arg not in {"self", "cls"}]
+        if not required:
+            continue
+        inputs = _default_inputs_for_function(node)
+        first = required[0]
+        inputs[first] = None
+        cases.append(
+            {
+                "function_name": node.name,
+                "input": inputs,
+                "expected_exception": "Exception",
+                "reason": "invalid None input (heuristic fallback)",
+                "test_type": "negative",
+                "requirement_id": req,
+            }
+        )
+    return cases
 
 
 def _generate_negative_tests(source_code: str, requirement_ids: list[str]) -> list[dict]:
@@ -105,7 +191,10 @@ Valid requirement IDs (assign exactly one to every test case):
 Return ONLY a JSON array, no markdown, no explanation. Each item:
 {{"function_name": "...", "input": {{...}}, "expected_exception": "ValueError", "reason": "short reason", "test_type": "negative", "requirement_id": "REQ-01"}}
 """
-    return _parse_json_response(_call_llm(prompt))
+    try:
+        return _parse_json_response(_call_llm(prompt))
+    except Exception:
+        return _fallback_negative_tests(source_code, requirement_ids)
 
 
 def _validate_test_cases(
@@ -230,7 +319,10 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
             lines.append(f"    assert {func_name}(**{input_kwargs!r}) == {expected!r}")
         lines.append("")
 
-    out_file.write_text("\n".join(lines), encoding="utf-8")
+    content = "\n".join(lines)
+    tmp = out_file.with_suffix(out_file.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(out_file)
     return str(out_file)
 
 

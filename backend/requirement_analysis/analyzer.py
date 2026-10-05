@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from config import GEMINI_API_KEY, GEMINI_MODEL
+from gemini_client import generate_text
 from input_handler.handler import load_session, save_session, session_dir
 from requirement_analysis.prompts import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
 
@@ -72,22 +73,31 @@ def _normalize(data: Any) -> list[dict[str, str]]:
     return normalized
 
 
-def _call_gemini(prompt: str, api_key: str, model_name: str) -> str:
-    from google import genai
-    from google.genai import types
+def _heuristic_requirements(requirements_text: str) -> list[dict[str, str]]:
+    """Split requirements into structured rules when Gemini is unavailable."""
+    chunks = [
+        re.sub(r"\s+", " ", part).strip(" \t-•*")
+        for part in re.split(r"[\n.;]+", requirements_text)
+        if part.strip()
+    ]
+    if not chunks:
+        chunks = [requirements_text.strip() or "Unspecified behavior"]
+    items: list[dict[str, str]] = []
+    for index, chunk in enumerate(chunks[:24], start=1):
+        items.append(
+            {
+                "requirement_id": f"REQ-{index:02d}",
+                "condition": chunk,
+                "expected_result": chunk,
+                "source_excerpt": chunk[:240],
+            }
+        )
+    return items
 
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=model_name,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.2,
-            response_mime_type="application/json",
-        ),
-    )
-    text = (response.text or "").strip()
-    if not text:
-        raise RequirementAnalysisError("Gemini returned an empty response.")
+
+def _call_gemini(prompt: str, api_key: str, model_name: str) -> str:
+    text, model_used = generate_text(prompt, api_key=api_key, model_name=model_name)
+    _call_gemini.last_model_used = model_used
     return text
 
 
@@ -100,42 +110,67 @@ def analyze_requirements(
 ) -> dict[str, Any]:
     key = (api_key if api_key is not None else GEMINI_API_KEY).strip()
     model = model_name or GEMINI_MODEL
-    if not key or key == "your_gemini_api_key_here":
-        raise RequirementAnalysisError(
-            "GEMINI_API_KEY is missing. Paste it into backend/.env as GEMINI_API_KEY=..."
-        )
 
     text = requirements_text.strip()
     if not text:
         raise RequirementAnalysisError("Requirements text cannot be empty.")
 
-    first_prompt = PROMPT_TEMPLATE.format(requirements_text=text)
-    try:
-        raw = llm_call(first_prompt, key, model)
-        items = _normalize(_extract_json(raw))
-    except (json.JSONDecodeError, RequirementAnalysisError, TypeError, ValueError):
-        retry_prompt = STRICT_RETRY_PROMPT.format(requirements_text=text)
-        try:
-            raw = llm_call(retry_prompt, key, model)
-            items = _normalize(_extract_json(raw))
-        except (json.JSONDecodeError, RequirementAnalysisError, TypeError, ValueError) as exc:
-            raise RequirementAnalysisError(
-                "Gemini did not return valid JSON after one retry. "
-                f"Last error: {exc}"
-            ) from exc
+    if not key or key == "your_gemini_api_key_here":
+        items = _heuristic_requirements(text)
+        return {
+            "model": "heuristic-fallback",
+            "requirement_count": len(items),
+            "requirements": items,
+            "fallback_reason": "GEMINI_API_KEY is missing.",
+        }
 
-    return {
-        "model": model,
+    first_prompt = PROMPT_TEMPLATE.replace("{requirements_text}", text)
+    retry_prompt = STRICT_RETRY_PROMPT.replace("{requirements_text}", text)
+
+    def _run_prompt(prompt: str) -> list[dict[str, str]]:
+        raw = llm_call(prompt, key, model)
+        return _normalize(_extract_json(raw))
+
+    fallback_reason = None
+    try:
+        items = _run_prompt(first_prompt)
+    except Exception as exc:  # noqa: BLE001
+        try:
+            items = _run_prompt(retry_prompt)
+        except Exception as retry_exc:  # noqa: BLE001
+            items = _heuristic_requirements(text)
+            fallback_reason = str(retry_exc) or str(exc)
+
+    model_used = (
+        getattr(_call_gemini, "last_model_used", model)
+        if llm_call is _call_gemini and not fallback_reason
+        else ("heuristic-fallback" if fallback_reason else model)
+    )
+
+    result = {
+        "model": model_used,
         "requirement_count": len(items),
         "requirements": items,
     }
+    if fallback_reason:
+        result["fallback_reason"] = fallback_reason
+    return result
 
 
 def analyze_session_requirements(session_id: str) -> dict[str, Any]:
     payload = load_session(session_id)
     requirements_path = session_dir(session_id) / "requirements.txt"
     requirements_text = requirements_path.read_text(encoding="utf-8")
-    analysis = analyze_requirements(requirements_text)
+    try:
+        analysis = analyze_requirements(requirements_text)
+    except Exception as exc:  # noqa: BLE001
+        items = _heuristic_requirements(requirements_text)
+        analysis = {
+            "model": "heuristic-fallback",
+            "requirement_count": len(items),
+            "requirements": items,
+            "fallback_reason": str(exc),
+        }
     payload["requirement_analysis"] = analysis
     payload["status"] = (
         "ready_for_test_generation"

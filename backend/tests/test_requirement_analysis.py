@@ -1,8 +1,6 @@
 import json
 
-import pytest
-
-from requirement_analysis.analyzer import RequirementAnalysisError, analyze_requirements
+from requirement_analysis.analyzer import analyze_requirements
 
 
 VALID_JSON = json.dumps(
@@ -54,15 +52,34 @@ def test_retries_when_first_response_is_not_json():
     assert result["requirement_count"] == 2
 
 
-def test_fails_after_retry():
-    with pytest.raises(RequirementAnalysisError, match="retry"):
-        analyze_requirements(
-            "Anything",
-            api_key="test-key",
-            llm_call=lambda prompt, key, model: "not json",
-        )
+def test_falls_back_after_invalid_json():
+    result = analyze_requirements(
+        "Members receive a 10% discount. Negative prices must be rejected.",
+        api_key="test-key",
+        llm_call=lambda prompt, key, model: "not json",
+    )
+    assert result["requirement_count"] >= 1
+    assert result["model"] == "heuristic-fallback"
 
 
-def test_missing_api_key():
-    with pytest.raises(RequirementAnalysisError, match="GEMINI_API_KEY"):
-        analyze_requirements("text", api_key="")
+def test_missing_api_key_uses_heuristic():
+    result = analyze_requirements("Members receive a 10% discount.", api_key="")
+    assert result["requirement_count"] >= 1
+    assert result["model"] == "heuristic-fallback"
+
+
+def test_requirements_with_curly_braces_do_not_crash():
+    captured = {}
+
+    def capture(prompt, key, model):
+        captured["prompt"] = prompt
+        raise RuntimeError("forced")
+
+    result = analyze_requirements(
+        "Return a dict like {total: 0} when the cart is empty.",
+        api_key="test-key",
+        llm_call=capture,
+    )
+    assert "{total: 0}" in captured["prompt"]
+    assert result["requirement_count"] >= 1
+    assert result["model"] == "heuristic-fallback"
