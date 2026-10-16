@@ -7,8 +7,8 @@ import json
 import re
 from typing import Any, Callable
 
-from config import GEMINI_API_KEY, GEMINI_MODEL
-from gemini_client import generate_text
+from config import NVIDIA_API_KEY, NVIDIA_MODEL
+from llm_client import generate_text, llm_is_configured
 from input_handler.handler import load_session, save_session, session_dir
 from input_handler.session_logging import log_session_error
 from test_generation.prompts_white_box import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
@@ -32,7 +32,7 @@ def _extract_json(text: str) -> Any:
     return json.loads(cleaned)
 
 
-def _call_gemini(prompt: str, api_key: str, model_name: str) -> str:
+def _call_llm(prompt: str, api_key: str, model_name: str) -> str:
     text, _model_used = generate_text(prompt, api_key=api_key, model_name=model_name)
     return text
 
@@ -90,7 +90,7 @@ def _generate_cases_with_llm(
     branches: list[dict[str, Any]],
     api_key: str,
     model_name: str,
-    llm_call: Callable[..., str] = _call_gemini,
+    llm_call: Callable[..., str] = _call_llm,
 ) -> list[dict[str, Any]]:
     branch_map = json.dumps(branches, indent=2)
     prompt = PROMPT_TEMPLATE.format(
@@ -113,7 +113,7 @@ def _generate_cases_with_llm(
             return _normalize_cases(_extract_json(raw), function_name)
         except (json.JSONDecodeError, WhiteBoxError, TypeError, ValueError) as exc:
             raise WhiteBoxError(
-                f"Gemini did not return valid JSON for {function_name}: {exc}"
+                f"LLM did not return valid JSON for {function_name}: {exc}"
             ) from exc
 
 
@@ -339,9 +339,9 @@ def analyze_session_white_box(session_id: str) -> dict:
     files_written: list[str] = []
     per_function: list[dict[str, Any]] = []
 
-    key = GEMINI_API_KEY.strip()
-    model = GEMINI_MODEL
-    llm_available = bool(key and key != "your_gemini_api_key_here")
+    key = NVIDIA_API_KEY.strip()
+    model = NVIDIA_MODEL
+    llm_available = llm_is_configured()
     try:
         for fn in functions:
             if fn.get("is_async"):

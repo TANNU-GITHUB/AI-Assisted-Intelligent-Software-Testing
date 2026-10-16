@@ -62,7 +62,7 @@ Empty carts should produce a total of 0.
 const analysisStages = [
   { label: 'Saving source and requirements...', icon: FileText },
   { label: 'Analyzing source code...', icon: Code2 },
-  { label: 'Analyzing requirements with Gemini...', icon: FileText },
+  { label: 'Analyzing requirements with LLM...', icon: FileText },
   { label: 'Generating white-box tests...', icon: Code2 },
   { label: 'Generating integration & negative tests...', icon: FileText },
   { label: 'Executing generated tests...', icon: Cpu },

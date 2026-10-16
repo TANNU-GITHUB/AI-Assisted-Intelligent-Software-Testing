@@ -264,7 +264,7 @@ export default function DashboardPage() {
                 {reqs.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-4 py-6 text-neutral-500 text-sm">
-                      No structured requirements yet. Gemini analysis runs from Live Lab (Task 4).
+                      No structured requirements yet. Requirement analysis runs from Live Lab (Task 4).
                     </td>
                   </tr>
                 )}

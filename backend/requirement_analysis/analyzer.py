@@ -1,4 +1,4 @@
-"""Task 4 — Requirement analysis via Gemini: natural language → structured testable rules."""
+"""Task 4 — Requirement analysis via LLM: natural language → structured testable rules."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import json
 import re
 from typing import Any
 
-from config import GEMINI_API_KEY, GEMINI_MODEL
-from gemini_client import generate_text
+from config import NVIDIA_API_KEY, NVIDIA_MODEL
+from llm_client import generate_text
 from input_handler.handler import load_session, save_session, session_dir
 from requirement_analysis.prompts import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
 
@@ -74,7 +74,7 @@ def _normalize(data: Any) -> list[dict[str, str]]:
 
 
 def _heuristic_requirements(requirements_text: str) -> list[dict[str, str]]:
-    """Split requirements into structured rules when Gemini is unavailable."""
+    """Split requirements into structured rules when the LLM is unavailable."""
     chunks = [
         re.sub(r"\s+", " ", part).strip(" \t-•*")
         for part in re.split(r"[\n.;]+", requirements_text)
@@ -95,9 +95,9 @@ def _heuristic_requirements(requirements_text: str) -> list[dict[str, str]]:
     return items
 
 
-def _call_gemini(prompt: str, api_key: str, model_name: str) -> str:
+def _call_llm(prompt: str, api_key: str, model_name: str) -> str:
     text, model_used = generate_text(prompt, api_key=api_key, model_name=model_name)
-    _call_gemini.last_model_used = model_used
+    _call_llm.last_model_used = model_used
     return text
 
 
@@ -106,23 +106,14 @@ def analyze_requirements(
     *,
     api_key: str | None = None,
     model_name: str | None = None,
-    llm_call=_call_gemini,
+    llm_call=_call_llm,
 ) -> dict[str, Any]:
-    key = (api_key if api_key is not None else GEMINI_API_KEY).strip()
-    model = model_name or GEMINI_MODEL
+    key = (api_key if api_key is not None else NVIDIA_API_KEY).strip()
+    model = model_name or NVIDIA_MODEL
 
     text = requirements_text.strip()
     if not text:
         raise RequirementAnalysisError("Requirements text cannot be empty.")
-
-    if not key or key == "your_gemini_api_key_here":
-        items = _heuristic_requirements(text)
-        return {
-            "model": "heuristic-fallback",
-            "requirement_count": len(items),
-            "requirements": items,
-            "fallback_reason": "GEMINI_API_KEY is missing.",
-        }
 
     first_prompt = PROMPT_TEMPLATE.replace("{requirements_text}", text)
     retry_prompt = STRICT_RETRY_PROMPT.replace("{requirements_text}", text)
@@ -142,8 +133,8 @@ def analyze_requirements(
             fallback_reason = str(retry_exc) or str(exc)
 
     model_used = (
-        getattr(_call_gemini, "last_model_used", model)
-        if llm_call is _call_gemini and not fallback_reason
+        getattr(_call_llm, "last_model_used", model)
+        if llm_call is _call_llm and not fallback_reason
         else ("heuristic-fallback" if fallback_reason else model)
     )
 

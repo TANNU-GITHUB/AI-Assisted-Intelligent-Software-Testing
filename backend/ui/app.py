@@ -13,7 +13,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from code_analysis.analyzer import CodeAnalysisError, analyze_session  # noqa: E402
-from config import GEMINI_API_KEY  # noqa: E402
+from config import NVIDIA_API_KEY  # noqa: E402
+from llm_client import llm_is_configured  # noqa: E402
 from input_handler.handler import (  # noqa: E402
     InputValidationError,
     create_session,
@@ -33,11 +34,10 @@ st.set_page_config(
 st.title("AI-Assisted Intelligent Software Testing")
 st.caption("Phase 1 — Input handling, source-code analysis, and requirement analysis")
 
-if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+if not llm_is_configured():
     st.warning(
-        "Paste your Gemini API key in the project-root `.env` file as "
-        "`GEMINI_API_KEY=...` then restart this app. "
-        "Get a key at https://aistudio.google.com/apikey"
+        "Set `NVIDIA_API_KEY=...` in `backend/.env` (NVIDIA NIM) or run Ollama locally "
+        "(`OLLAMA_BASE_URL`, `OLLAMA_MODEL`) then restart this app."
     )
 
 uploaded = st.file_uploader("Upload a Python source file", type=["py"])

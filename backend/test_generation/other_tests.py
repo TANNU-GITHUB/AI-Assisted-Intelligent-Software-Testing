@@ -14,8 +14,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import GEMINI_API_KEY, GEMINI_MODEL
-from gemini_client import generate_text
+from config import NVIDIA_API_KEY, NVIDIA_MODEL
+from llm_client import generate_text, llm_is_configured
 from input_handler.handler import load_session, save_session, session_dir
 from input_handler.session_logging import log_session_error
 
@@ -25,9 +25,11 @@ class OtherTestsError(Exception):
 
 
 def _call_llm(prompt: str) -> str:
-    if not GEMINI_API_KEY:
-        raise OtherTestsError("GEMINI_API_KEY not set in backend/.env")
-    text, _model = generate_text(prompt, api_key=GEMINI_API_KEY, model_name=GEMINI_MODEL)
+    if not llm_is_configured():
+        raise OtherTestsError(
+            "No LLM configured — set NVIDIA_API_KEY in backend/.env or run Ollama locally."
+        )
+    text, _model = generate_text(prompt, api_key=NVIDIA_API_KEY, model_name=NVIDIA_MODEL)
     return text
 
 

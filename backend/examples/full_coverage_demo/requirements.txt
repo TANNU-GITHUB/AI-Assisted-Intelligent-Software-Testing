@@ -1,0 +1,74 @@
+
+=== requirements_01_pricing.txt ===
+
+PRICING AND DISCOUNTS (Section 1)
+
+Members receive a 10% discount on eligible pricing rules when is_member is True.
+Non-members pay the standard computed amount with no member discount.
+Negative quantity must be rejected with ValueError on every pricing_rule function.
+Zero quantity must return 0.0 for pricing rules that use the zero-quantity branch.
+Bulk discount applies when quantity exceeds 50 units (BULK_DISCOUNT_THRESHOLD).
+Premium flag may apply an additional reduction when combined with membership.
+All monetary results must be rounded to two decimal places.
+compute_pricing_bundle must sum the first ten pricing rules for a given quantity.
+pricing_rule functions must not accept negative quantity.
+
+=== requirements_02_inventory.txt ===
+
+INVENTORY (Section 2)
+
+Inventory rules must validate quantity is non-negative before calculation.
+inventory_rule functions follow the same membership and premium semantics as pricing.
+Quantity zero must yield zero total where the rule defines an early return.
+Rules that require at least one unit must raise ValueError when quantity is below 1.
+compute_inventory_bundle aggregates the first ten inventory rules.
+Inventory calculations must use _round_money for final values.
+Tiered logic (standard, silver, gold) must apply correct multipliers by quantity band.
+Member tier rules apply an extra 0.02 multiplier reduction when is_member is True.
+
+=== requirements_03_shipping.txt ===
+
+SHIPPING AND FULFILLMENT (Section 3)
+
+Shipping rules must reject negative quantity via _reject_negative.
+Loop-based shipping rules cap the iteration count at five steps maximum.
+Member shipping adjustments must not produce negative totals (floor at zero).
+Premium shipping adds fee components before membership halving where applicable.
+compute_shipping_bundle must return the sum of shipping_rule_001 through shipping_rule_010.
+Shipping fee base of 2.5 may increase by 1.0 when premium is True.
+All shipping outputs are expressed as floats rounded to two decimals.
+
+=== requirements_04_payment.txt ===
+
+PAYMENTS (Section 4)
+
+Payment rules must raise ValueError for negative quantity.
+Payment tier multipliers must match standard 1.0, silver 0.97, and gold 0.94 bands.
+Members receive an additional 0.02 reduction on the tier multiplier.
+compute_payment_bundle combines the first ten payment rules.
+Payment results must never return unrounded long floats (use _round_money).
+Quantity at or above 100 must classify as gold tier unless overridden by rule variant.
+
+=== requirements_05_loyalty.txt ===
+
+LOYALTY AND PROMOTIONS (Section 5)
+
+Loyalty rules honor the global MEMBER_DISCOUNT constant for member paths.
+loyalty_rule functions share bulk, tier, loop, and fee patterns with other domains.
+compute_loyalty_bundle is the integration entry point for loyalty coverage.
+Premium and is_member may be combined; order of application must match code.
+Negative quantity is always invalid across loyalty_rule functions.
+Zero quantity paths must return 0.0 where defined in the rule body.
+
+=== requirements_06_returns_validation.txt ===
+
+RETURNS, VALIDATION, AND INTEGRATION (Section 6)
+
+returns_rule functions must follow the same validation and rounding conventions.
+compute_returns_bundle sums the first ten returns rules.
+validate_cart_line must reject empty SKU, negative price, negative quantity, and quantity above MAX_LINE_QTY.
+validate_member_flag must raise TypeError when is_member is not a boolean.
+combine_domain_bundles must call all six compute_*_bundle functions and return rounded total.
+estimate_order_total returns 0.0 for zero quantity.
+estimate_order_total applies a 20 currency unit member discount when total exceeds 500.
+Integration functions must import and execute without side effects beyond calculation.

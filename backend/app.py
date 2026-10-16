@@ -192,30 +192,15 @@ def run_coverage(session_id: str):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _register_gemini_exception_handlers(application: FastAPI) -> None:
-    try:
-        from google.genai import errors as genai_errors
-    except ImportError:
-        return
+def _register_llm_exception_handlers(application: FastAPI) -> None:
+    from llm_client import LLMError
 
-    @application.exception_handler(genai_errors.ServerError)
-    async def _gemini_server_error(_request, exc: genai_errors.ServerError):
+    @application.exception_handler(LLMError)
+    async def _llm_error(_request, exc: LLMError):
         return JSONResponse(
             status_code=503,
-            content={
-                "detail": (
-                    "Gemini is temporarily unavailable (high demand or outage). "
-                    "Wait a minute and retry — the client retries and uses fallback models."
-                ),
-            },
-        )
-
-    @application.exception_handler(genai_errors.ClientError)
-    async def _gemini_client_error(_request, exc: genai_errors.ClientError):
-        return JSONResponse(
-            status_code=400,
-            content={"detail": f"Gemini API error: {exc}"},
+            content={"detail": str(exc)},
         )
 
 
-_register_gemini_exception_handlers(app)
+_register_llm_exception_handlers(app)

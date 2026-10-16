@@ -1,0 +1,55 @@
+%% AI-Assisted Intelligent Software Testing — paste in draw.io: Insert → Advanced → Mermaid
+flowchart LR
+  subgraph CLIENTS["Clients"]
+    direction TB
+    BROWSER["Browser\nLive Lab · Dashboard"]
+    HTTP["HTTPS · localhost:3000"]
+    BROWSER --> HTTP
+  end
+
+  subgraph FRONTEND["Next.js frontend · port 3000"]
+    direction TB
+    STACK_FE["React · TypeScript · Tailwind"]
+    PAGES["App Router pages\nlive-lab · dashboard"]
+    API_CLIENT["API client\nfrontend/lib/api.ts"]
+    REWRITE["Proxy\n/api/* → 127.0.0.1:8000"]
+    STACK_FE --> PAGES --> API_CLIENT --> REWRITE
+  end
+
+  subgraph BACKEND["FastAPI backend · Uvicorn · port 8000"]
+    direction TB
+    HTTP_API["HTTP API\nbackend/app.py"]
+    T2["Input handler\nvalidate · create session"]
+    T3["Code analysis\nPython AST"]
+    T4["Requirement analysis\nNVIDIA NIM + Ollama + heuristic fallback"]
+    T5["Test generation\nwhite-box · integration · negative"]
+    T89["Execution & coverage\npytest · coverage.py"]
+    T10["HTML report\nJinja2"]
+    HTTP_API --> T2 --> T3 --> T4 --> T5 --> T89 --> T10
+  end
+
+  subgraph DATA["Persistence · filesystem not a database"]
+    direction TB
+    SESSIONS["backend/sessions/session_id/"]
+    MANIFEST["session.json manifest"]
+    ARTIFACTS["source.py · requirements.txt\ntests/ · coverage.json"]
+    SESSIONS --> MANIFEST
+    SESSIONS --> ARTIFACTS
+  end
+
+  subgraph EXTERNAL["External services"]
+    LLM["NVIDIA NIM API\n+ Ollama fallback\nbackend/.env"]
+  end
+
+  HTTP --> PAGES
+  REWRITE -->|"REST JSON"| HTTP_API
+  T10 -->|"read / write"| SESSIONS
+  T4 -.->|"LLM"| LLM
+  T5 -.->|"LLM"| LLM
+
+  style CLIENTS fill:#ffffff,stroke:#333333,stroke-width:2px
+  style FRONTEND fill:#dae8fc,stroke:#6c8ebf,stroke-width:2px
+  style BACKEND fill:#fff2cc,stroke:#d6b656,stroke-width:2px
+  style DATA fill:#f8cecc,stroke:#b85450,stroke-width:2px
+  style EXTERNAL fill:#d5e8d4,stroke:#82b366,stroke-width:2px
+  style HTTP_API fill:#ffe6cc,stroke:#d79b00,stroke-width:2px

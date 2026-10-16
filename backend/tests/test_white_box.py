@@ -68,7 +68,7 @@ def test_white_box_uses_llm_when_available(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(
-        "test_generation.white_box.GEMINI_API_KEY",
+        "test_generation.white_box.NVIDIA_API_KEY",
         "test-key",
     )
     monkeypatch.setattr(

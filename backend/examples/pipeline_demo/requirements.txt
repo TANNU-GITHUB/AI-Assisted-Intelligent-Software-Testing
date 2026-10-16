@@ -1,0 +1,6 @@
+Members receive a 10% discount on each unit price when is_member is True.
+Non-members pay the full unit price with no discount.
+Negative unit prices must raise ValueError with a non-negative price message.
+An empty price list must produce a checkout total of exactly 0.
+Shipping is 15 when the discounted subtotal is below 100; otherwise shipping is 0. Members with final total over 500 receive 20 off.
+Negative quantity in line_total must raise ValueError.

@@ -8,7 +8,7 @@ An AI-assisted testing tool that analyzes a Python source file and natural-langu
 
 - Accepts a Python source file and requirements written in natural language.
 - Analyzes Python functions and branches using the built-in AST module.
-- Converts requirements into structured, traceable requirement records using Gemini when configured, with a heuristic fallback if the API key is unavailable.
+- Converts requirements into structured, traceable requirement records using NVIDIA NIM (with Ollama fallback) when configured, with a heuristic fallback if LLM calls fail.
 - Generates white-box tests and additional negative and same-file integration-style tests.
 - Executes generated tests with pytest and measures coverage with coverage.py.
 - Stores run data in a session directory and generates a downloadable HTML report.
@@ -17,7 +17,7 @@ The current system does **not** fetch or test a GitHub repository, accept diagra
 
 ## Architecture
 
-The application has a Next.js frontend and a FastAPI backend. The backend coordinates analysis and test generation, stores each run in a session directory, invokes pytest and coverage.py, and renders the final report. Gemini is an optional external service for AI-assisted requirement and test generation.
+The application has a Next.js frontend and a FastAPI backend. The backend coordinates analysis and test generation, stores each run in a session directory, invokes pytest and coverage.py, and renders the final report. NVIDIA NIM and local Ollama provide optional AI-assisted requirement and test generation.
 
 <!-- mermaid-checked: no \n, no em-dash/en-dash, no {} in labels, subgraphs are id["label"], arrows are -->|"label"|, all subgraphs closed by end, ids unique -->
 ```mermaid
@@ -38,8 +38,9 @@ flowchart TD
         Reporting["HTML report generation"]
         SessionStore[("Session files on disk")]
     end
-    subgraph ExternalLayer["External service"]
-        Gemini["Google Gemini API"]
+    subgraph ExternalLayer["External services"]
+        NvidiaNim["NVIDIA NIM API"]
+        Ollama["Ollama local fallback"]
     end
 
     Browser -->|"uses"| NextApp
@@ -47,9 +48,11 @@ flowchart TD
     ApiProxy -->|"forwards requests"| FastApi
     FastApi -->|"runs requested stage"| CodeAnalysis
     FastApi -->|"runs requested stage"| RequirementAnalysis
-    RequirementAnalysis -.->|"optional AI calls"| Gemini
+    RequirementAnalysis -.->|"optional AI calls"| NvidiaNim
+    RequirementAnalysis -.->|"fallback"| Ollama
     FastApi -->|"runs requested stage"| TestGeneration
-    TestGeneration -.->|"optional AI calls"| Gemini
+    TestGeneration -.->|"optional AI calls"| NvidiaNim
+    TestGeneration -.->|"fallback"| Ollama
     FastApi -->|"session data"| SessionStore
     TestGeneration -->|"writes pytest files"| SessionStore
     Execution -->|"reads generated tests"| SessionStore
@@ -66,14 +69,14 @@ flowchart TD
 | Frontend | Next.js 13, React 18, TypeScript | Live Lab interface and API proxy |
 | Backend | Python, FastAPI | Session and analysis API |
 | Code analysis | Python AST | Extracts function and branch information |
-| Requirement analysis | Google Gemini API, with heuristic fallback | Structures natural-language requirements |
+| Requirement analysis | NVIDIA NIM + Ollama, with heuristic fallback | Structures natural-language requirements |
 | Test generation and execution | pytest | Generates and runs tests |
 | Coverage | coverage.py | Measures test coverage |
 | Reporting | Jinja2 and HTML | Builds downloadable session reports |
 | Persistence | Session files on disk | Stores source, requirements, generated tests, and results |
 | Frontend checks | Playwright | Smoke-tests the frontend and backend health integration |
 
-There is no database in the current workflow. Session data is saved under `backend/sessions/`. Gemini is optional for requirement analysis; without a configured key, a heuristic parser is used. Some test-generation paths also include fallback behavior.
+There is no database in the current workflow. Session data is saved under `backend/sessions/`. LLM calls use NVIDIA first, then Ollama; heuristic parsers and AST fallbacks apply when both are unavailable.
 
 ### Component relationships
 
@@ -157,10 +160,12 @@ py -m venv venv
 pip install -r backend\requirements.txt
 ```
 
-Optionally copy `backend\.env.example` to `backend\.env` and set your Gemini API key:
+Optionally copy `backend\.env.example` to `backend\.env` and set your NVIDIA API key (and Ollama if used locally):
 
 ```env
-GEMINI_API_KEY=your_key_here
+NVIDIA_API_KEY=your_nvidia_key_here
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2
 ```
 
 Do not commit `.env` files or API keys. If the key is not configured, requirement parsing uses a heuristic fallback.

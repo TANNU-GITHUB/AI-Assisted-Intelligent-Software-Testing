@@ -62,8 +62,12 @@ def test_falls_back_after_invalid_json():
     assert result["model"] == "heuristic-fallback"
 
 
-def test_missing_api_key_uses_heuristic():
-    result = analyze_requirements("Members receive a 10% discount.", api_key="")
+def test_missing_api_key_uses_heuristic_when_llm_fails():
+    result = analyze_requirements(
+        "Members receive a 10% discount.",
+        api_key="",
+        llm_call=lambda prompt, key, model: (_ for _ in ()).throw(RuntimeError("offline")),
+    )
     assert result["requirement_count"] >= 1
     assert result["model"] == "heuristic-fallback"
 

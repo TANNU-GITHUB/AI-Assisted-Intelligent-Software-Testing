@@ -42,7 +42,7 @@ def isolated_sessions(tmp_path, monkeypatch):
         "requirement_analysis.analyzer.analyze_requirements",
         lambda text, **kwargs: json.loads(json.dumps(FAKE_REQUIREMENTS)),
     )
-    monkeypatch.setattr("test_generation.white_box.GEMINI_API_KEY", "")
+    monkeypatch.setattr("test_generation.white_box.NVIDIA_API_KEY", "")
     return tmp_path
 
 
