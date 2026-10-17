@@ -21,6 +21,8 @@ sessions/*
 !sessions/.gitkeep
 backend/sessions/*
 !backend/sessions/.gitkeep
+backend/data/
+
 
 # IDE
 .idea/

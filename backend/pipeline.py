@@ -14,11 +14,13 @@ def run_phase1(
     source_code: str,
     requirements_text: str,
     original_filename: str = "source.py",
+    owner_user_id: str | None = None,
 ) -> dict[str, Any]:
     session = create_session(
         source_code=source_code,
         requirements_text=requirements_text,
         original_filename=original_filename,
+        owner_user_id=owner_user_id,
     )
     session_id = session["session_id"]
     analyze_session(session_id)

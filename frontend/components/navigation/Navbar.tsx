@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bug, Menu, X, Sun, Moon } from 'lucide-react';
+import { Bug, Menu, X, LogOut, User } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
+import { fetchCurrentUser, logout, type PublicUser } from '@/lib/auth';
 
 const navItems = [
   { label: 'Home', href: '/' },
@@ -18,6 +19,7 @@ const navItems = [
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [user, setUser] = useState<PublicUser | null>(null);
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const isLight = theme === 'light';
@@ -32,6 +34,18 @@ export function Navbar() {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    fetchCurrentUser()
+      .then(setUser)
+      .catch(() => setUser(null));
+  }, [pathname]);
+
+  function handleLogout() {
+    logout();
+    setUser(null);
+    window.location.href = '/login';
+  }
 
   return (
     <>
@@ -135,13 +149,46 @@ export function Navbar() {
                 }`} />
               </button>
 
-              <Link
-                href="/live-lab"
-                className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-black bg-yellow-500 rounded-full hover:bg-yellow-400 transition-colors group"
-              >
-                Start Testing
-                <span className="group-hover:translate-x-0.5 transition-transform">→</span>
-              </Link>
+              {user ? (
+                <>
+                  <span className="flex items-center gap-1.5 text-xs text-neutral-400 max-w-[8rem] truncate">
+                    <User className="w-3.5 h-3.5 shrink-0" />
+                    {user.username}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs text-neutral-400 hover:text-white transition-colors"
+                    aria-label="Sign out"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    Sign out
+                  </button>
+                  <Link
+                    href="/live-lab"
+                    className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-black bg-yellow-500 rounded-full hover:bg-yellow-400 transition-colors group"
+                  >
+                    Live Lab
+                    <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="px-4 py-2 text-sm text-neutral-300 hover:text-white transition-colors"
+                  >
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/live-lab"
+                    className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-black bg-yellow-500 rounded-full hover:bg-yellow-400 transition-colors group"
+                  >
+                    Start Testing
+                    <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                  </Link>
+                </>
+              )}
             </div>
 
             <div className="flex md:hidden items-center gap-2">
@@ -214,11 +261,27 @@ export function Navbar() {
                   </Link>
                 );
               })}
+              {user ? (
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="mt-4 px-4 py-3 text-center text-neutral-300 border border-yellow-500/20 rounded-lg"
+                >
+                  Sign out ({user.username})
+                </button>
+              ) : (
+                <Link
+                  href="/login"
+                  className="mt-4 px-4 py-3 text-center text-neutral-300 border border-yellow-500/20 rounded-lg"
+                >
+                  Sign in
+                </Link>
+              )}
               <Link
                 href="/live-lab"
-                className="mt-4 px-4 py-3 text-center text-black bg-yellow-500 rounded-lg font-medium"
+                className="mt-2 px-4 py-3 text-center text-black bg-yellow-500 rounded-lg font-medium"
               >
-                Start Testing →
+                Live Lab →
               </Link>
             </div>
           </motion.div>

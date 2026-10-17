@@ -1,3 +1,5 @@
+import { authHeaders } from './auth';
+
 export const SESSION_STORAGE_KEY = 'bugai_session_id';
 
 export type FunctionAnalysis = {
@@ -86,7 +88,12 @@ async function readError(res: Response): Promise<string> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(apiUrl(path), init);
+  const headers = new Headers(init?.headers);
+  const auth = authHeaders();
+  Object.entries(auth).forEach(([key, value]) => {
+    if (!headers.has(key)) headers.set(key, value);
+  });
+  const res = await fetch(apiUrl(path), { ...init, headers });
   if (!res.ok) {
     throw new Error(await readError(res));
   }
@@ -151,7 +158,9 @@ export async function getSession(sessionId: string): Promise<SessionPayload> {
 }
 
 export async function downloadSessionReport(sessionId: string): Promise<void> {
-  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/report`));
+  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/report`), {
+    headers: authHeaders(),
+  });
   if (!res.ok) {
     throw new Error(await readError(res));
   }

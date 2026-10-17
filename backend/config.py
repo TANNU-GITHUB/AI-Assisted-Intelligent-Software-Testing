@@ -27,3 +27,16 @@ NVIDIA_BASE_URL = (
 # Fallback: local Ollama
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2").strip() or "llama3.2"
+
+# Auth
+AUTH_DB_PATH = ROOT_DIR / "data" / "auth.db"
+JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production-use-long-random-string")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))  # 7 days
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+GOOGLE_REDIRECT_URI = os.getenv(
+    "GOOGLE_REDIRECT_URI", "http://localhost:3000/auth/google/callback"
+).strip()
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").strip()

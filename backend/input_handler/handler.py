@@ -46,7 +46,7 @@ def session_with_files(session_id: str) -> dict:
     return payload
 
 
-def list_sessions() -> list[dict]:
+def list_sessions(owner_user_id: str | None = None) -> list[dict]:
     if not SESSIONS_DIR.exists():
         return []
     items: list[dict] = []
@@ -57,6 +57,8 @@ def list_sessions() -> list[dict]:
         if not manifest.is_file():
             continue
         data = json.loads(manifest.read_text(encoding="utf-8"))
+        if owner_user_id and data.get("owner_user_id") != owner_user_id:
+            continue
         items.append(
             {
                 "session_id": data.get("session_id", folder.name),
@@ -102,6 +104,7 @@ def create_session(
     source_code: str,
     requirements_text: str,
     original_filename: str = "source.py",
+    owner_user_id: str | None = None,
 ) -> dict:
     """Validate inputs, write session files, and return the shared JSON payload."""
     _validate_source(original_filename, source_code)
@@ -138,6 +141,7 @@ def create_session(
         "code_analysis": None,
         "requirement_analysis": None,
         "errors": [],
+        "owner_user_id": owner_user_id,
     }
     return save_session(payload)
 

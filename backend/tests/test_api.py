@@ -1,38 +1,37 @@
-from fastapi.testclient import TestClient
-
-from app import app
+from tests.conftest import register_user
 
 
-client = TestClient(app)
-
-
-def test_health():
+def test_health(client):
     res = client.get("/api/health")
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
 
 
-def test_report_download(tmp_path, monkeypatch):
+def test_report_download(client, tmp_path, monkeypatch):
     monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    headers = register_user(client)
     created = client.post(
         "/api/sessions",
+        headers=headers,
         files={"source_file": ("demo.py", b"def add(a, b):\n    return a + b\n", "text/x-python")},
         data={"requirements_text": "Adding returns the sum.", "run_analysis": "false"},
     )
     session_id = created.json()["session_id"]
 
-    report = client.get(f"/api/sessions/{session_id}/report")
+    report = client.get(f"/api/sessions/{session_id}/report", headers=headers)
     assert report.status_code == 200
     assert "text/html" in report.headers["content-type"]
     assert "Software Test Report" in report.text
 
 
-def test_source_update_runs_existing_tests(tmp_path, monkeypatch):
+def test_source_update_runs_existing_tests(client, tmp_path, monkeypatch):
     import execution.analyzer
 
     monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    headers = register_user(client)
     created = client.post(
         "/api/sessions",
+        headers=headers,
         files={"source_file": ("demo.py", b"def value():\n    return 1\n", "text/x-python")},
         data={"requirements_text": "value returns one.", "run_analysis": "false"},
     )
@@ -49,6 +48,7 @@ def test_source_update_runs_existing_tests(tmp_path, monkeypatch):
     monkeypatch.setattr(execution.analyzer, "analyze_session_execution", fake_execution)
     updated = client.put(
         f"/api/sessions/{session_id}/source",
+        headers=headers,
         json={"source_code": "def value():\n    return 2\n"},
     )
 
@@ -57,7 +57,7 @@ def test_source_update_runs_existing_tests(tmp_path, monkeypatch):
     assert updated.json()["regression_awareness"]["execution"]["passed"] == 1
 
 
-def test_examples():
+def test_examples(client):
     res = client.get("/api/examples")
     assert res.status_code == 200
     body = res.json()
@@ -65,29 +65,33 @@ def test_examples():
     assert "Members receive" in body["requirements_text"]
 
 
-def test_session_and_code_analysis(tmp_path, monkeypatch):
+def test_session_and_code_analysis(client, tmp_path, monkeypatch):
     monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    headers = register_user(client)
     source = tmp_path / "demo.py"
     source.write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
     res = client.post(
         "/api/sessions",
+        headers=headers,
         files={"source_file": ("demo.py", source.read_bytes(), "text/x-python")},
         data={"requirements_text": "Adding two numbers returns their sum.", "run_analysis": "false"},
     )
     assert res.status_code == 200
     session_id = res.json()["session_id"]
-    analyzed = client.post(f"/api/sessions/{session_id}/code-analysis")
+    analyzed = client.post(f"/api/sessions/{session_id}/code-analysis", headers=headers)
     assert analyzed.status_code == 200
     functions = analyzed.json()["code_analysis"]["functions"]
     assert functions[0]["name"] == "add"
-    fetched = client.get(f"/api/sessions/{session_id}")
+    fetched = client.get(f"/api/sessions/{session_id}", headers=headers)
     assert fetched.status_code == 200
     assert "def add" in fetched.json()["source_code"]
 
 
-def test_rejects_non_python_upload():
+def test_rejects_non_python_upload(client):
+    headers = register_user(client)
     res = client.post(
         "/api/sessions",
+        headers=headers,
         files={"source_file": ("notes.txt", b"print('hi')", "text/plain")},
         data={"requirements_text": "Some requirement", "run_analysis": "false"},
     )
@@ -95,8 +99,9 @@ def test_rejects_non_python_upload():
     assert "Python" in res.json()["detail"]
 
 
-def test_requirement_analysis_endpoint(tmp_path, monkeypatch):
+def test_requirement_analysis_endpoint(client, tmp_path, monkeypatch):
     monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    headers = register_user(client)
     fake = {
         "model": "test",
         "requirement_count": 1,
@@ -115,25 +120,28 @@ def test_requirement_analysis_endpoint(tmp_path, monkeypatch):
     )
     res = client.post(
         "/api/sessions",
+        headers=headers,
         files={"source_file": ("demo.py", b"def f():\n    return 1\n", "text/x-python")},
         data={"requirements_text": "Members receive a discount.", "run_analysis": "false"},
     )
     session_id = res.json()["session_id"]
-    analyzed = client.post(f"/api/sessions/{session_id}/requirement-analysis")
+    analyzed = client.post(f"/api/sessions/{session_id}/requirement-analysis", headers=headers)
     assert analyzed.status_code == 200
     assert analyzed.json()["requirement_analysis"]["requirements"][0]["requirement_id"] == "REQ-01"
 
 
-def test_white_box_endpoint(tmp_path, monkeypatch):
+def test_white_box_endpoint(client, tmp_path, monkeypatch):
     monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    headers = register_user(client)
 
     res = client.post(
         "/api/sessions",
+        headers=headers,
         files={"source_file": ("demo.py", b"def add(a, b):\n    return a + b\n", "text/x-python")},
         data={"requirements_text": "Adding two numbers returns their sum.", "run_analysis": "false"},
     )
     session_id = res.json()["session_id"]
-    client.post(f"/api/sessions/{session_id}/code-analysis")
-    generated = client.post(f"/api/sessions/{session_id}/white-box-tests")
+    client.post(f"/api/sessions/{session_id}/code-analysis", headers=headers)
+    generated = client.post(f"/api/sessions/{session_id}/white-box-tests", headers=headers)
     assert generated.status_code == 200
     assert generated.json()["white_box_tests"]["test_count"] >= 1

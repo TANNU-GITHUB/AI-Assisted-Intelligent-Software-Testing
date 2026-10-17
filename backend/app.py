@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
+from auth.routes import get_current_user, router as auth_router
+from auth.session_access import assert_session_owner
+from auth.store import UserRecord, init_db
 from code_analysis.analyzer import CodeAnalysisError, analyze_session
 from config import ROOT_DIR
 from input_handler.handler import (
@@ -22,11 +27,22 @@ from test_generation.other_tests import OtherTestsError, analyze_session_other_t
 from test_generation.white_box import WhiteBoxError, analyze_session_white_box
 from execution.analyzer import CoverageError, ExecutionError, analyze_session_coverage, analyze_session_execution
 from reporting.analyzer import render_session_report
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    yield
+
+
 app = FastAPI(
     title="AI-Assisted Intelligent Software Testing",
     description="Phase 1 API: input handling, source-code analysis, requirement analysis.",
     version="0.1.0",
+    lifespan=lifespan,
 )
+
+app.include_router(auth_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,8 +77,8 @@ def get_examples() -> dict[str, str]:
 
 
 @app.get("/api/sessions")
-def get_sessions() -> dict:
-    return {"sessions": list_sessions()}
+def get_sessions(user: UserRecord = Depends(get_current_user)) -> dict:
+    return {"sessions": list_sessions(owner_user_id=user.id)}
 
 
 @app.post("/api/sessions")
@@ -70,6 +86,7 @@ async def create_analysis_session(
     source_file: UploadFile = File(...),
     requirements_text: str = Form(...),
     run_analysis: str = Form("false"),
+    user: UserRecord = Depends(get_current_user),
 ):
     filename = source_file.filename or "source.py"
     raw = await source_file.read()
@@ -84,12 +101,14 @@ async def create_analysis_session(
                 source_code=source_code,
                 requirements_text=requirements_text,
                 original_filename=filename,
+                owner_user_id=user.id,
             )
         else:
             payload = create_session(
                 source_code=source_code,
                 requirements_text=requirements_text,
                 original_filename=filename,
+                owner_user_id=user.id,
             )
         return session_with_files(payload["session_id"])
     except (InputValidationError, CodeAnalysisError, RequirementAnalysisError) as exc:
@@ -99,19 +118,25 @@ async def create_analysis_session(
 
 
 @app.get("/api/sessions/{session_id}")
-def get_session(session_id: str):
+def get_session(session_id: str, user: UserRecord = Depends(get_current_user)):
     try:
+        assert_session_owner(session_id, user)
         return session_with_files(session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.put("/api/sessions/{session_id}/source")
-def update_source(session_id: str, body: dict):
+def update_source(
+    session_id: str,
+    body: dict,
+    user: UserRecord = Depends(get_current_user),
+):
     source_code = body.get("source_code")
     if not isinstance(source_code, str):
         raise HTTPException(status_code=400, detail="source_code must be a string.")
     try:
+        assert_session_owner(session_id, user)
         update_session_source(session_id, source_code)
         return session_with_files(session_id)
     except FileNotFoundError as exc:
@@ -121,17 +146,23 @@ def update_source(session_id: str, body: dict):
 
 
 @app.get("/api/sessions/{session_id}/report", response_class=HTMLResponse)
-def get_session_report(session_id: str):
+def get_session_report(session_id: str, user: UserRecord = Depends(get_current_user)):
     try:
+        assert_session_owner(session_id, user)
         html = render_session_report(session_id)
         return HTMLResponse(content=html, headers={"Content-Disposition": "attachment; filename=test-report.html"})
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _protected_session(session_id: str, user: UserRecord) -> None:
+    assert_session_owner(session_id, user)
+
+
 @app.post("/api/sessions/{session_id}/code-analysis")
-def run_code_analysis(session_id: str):
+def run_code_analysis(session_id: str, user: UserRecord = Depends(get_current_user)):
     try:
+        _protected_session(session_id, user)
         analyze_session(session_id)
         return session_with_files(session_id)
     except FileNotFoundError as exc:
@@ -141,8 +172,9 @@ def run_code_analysis(session_id: str):
 
 
 @app.post("/api/sessions/{session_id}/requirement-analysis")
-def run_requirement_analysis(session_id: str):
+def run_requirement_analysis(session_id: str, user: UserRecord = Depends(get_current_user)):
     try:
+        _protected_session(session_id, user)
         analyze_session_requirements(session_id)
         return session_with_files(session_id)
     except FileNotFoundError as exc:
@@ -151,8 +183,9 @@ def run_requirement_analysis(session_id: str):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @app.post("/api/sessions/{session_id}/white-box-tests")
-def run_white_box_tests(session_id: str):
+def run_white_box_tests(session_id: str, user: UserRecord = Depends(get_current_user)):
     try:
+        _protected_session(session_id, user)
         analyze_session_white_box(session_id)
         return session_with_files(session_id)
     except FileNotFoundError as exc:
@@ -162,8 +195,9 @@ def run_white_box_tests(session_id: str):
 
 
 @app.post("/api/sessions/{session_id}/other-tests")
-def run_other_tests(session_id: str):
+def run_other_tests(session_id: str, user: UserRecord = Depends(get_current_user)):
     try:
+        _protected_session(session_id, user)
         analyze_session_other_tests(session_id)
         return session_with_files(session_id)
     except FileNotFoundError as exc:
@@ -172,8 +206,9 @@ def run_other_tests(session_id: str):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @app.post("/api/sessions/{session_id}/execute-tests")
-def run_execute_tests(session_id: str):
+def run_execute_tests(session_id: str, user: UserRecord = Depends(get_current_user)):
     try:
+        _protected_session(session_id, user)
         analyze_session_execution(session_id)
         return session_with_files(session_id)
     except FileNotFoundError as exc:
@@ -182,8 +217,9 @@ def run_execute_tests(session_id: str):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     
 @app.post("/api/sessions/{session_id}/coverage")
-def run_coverage(session_id: str):
+def run_coverage(session_id: str, user: UserRecord = Depends(get_current_user)):
     try:
+        _protected_session(session_id, user)
         analyze_session_coverage(session_id)
         return session_with_files(session_id)
     except FileNotFoundError as exc:
