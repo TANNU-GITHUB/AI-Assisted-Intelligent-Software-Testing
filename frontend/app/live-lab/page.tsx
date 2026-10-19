@@ -22,6 +22,7 @@ import {
   runCodeAnalysis,
   runRequirementAnalysis,
   runWhiteBoxTests,
+  runBlackBoxTests,
   runOtherTests,
   runExecuteTests,
   runCoverage,
@@ -64,6 +65,7 @@ const analysisStages = [
   { label: 'Analyzing source code...', icon: Code2 },
   { label: 'Analyzing requirements with LLM...', icon: FileText },
   { label: 'Generating white-box tests...', icon: Code2 },
+  { label: 'Generating black-box tests...', icon: FileText },
   { label: 'Generating integration & negative tests...', icon: FileText },
   { label: 'Executing generated tests...', icon: Cpu },
   { label: 'Measuring coverage...', icon: Cpu },
@@ -128,6 +130,10 @@ export default function LiveLabPage() {
       latest = withWhiteBox;
       setSession(withWhiteBox);
       setStageIndex(4);
+      const withBlackBox = await runBlackBoxTests(created.session_id);
+      latest = withBlackBox;
+      setSession(withBlackBox);
+      setStageIndex(5);
 
       try {
         const withOther = await runOtherTests(created.session_id);
@@ -140,18 +146,18 @@ export default function LiveLabPage() {
             : 'Other tests skipped.'
         );
       }
-      setStageIndex(5);
+      setStageIndex(6);
 
       const executed = await runExecuteTests(created.session_id);
       latest = executed;
       setSession(executed);
-      setStageIndex(6);
+      setStageIndex(7);
 
       const covered = await runCoverage(created.session_id);
       latest = covered;
       persistSessionId(covered.session_id);
       setSession(covered);
-      setStageIndex(7);
+      setStageIndex(8);
       setPhase('complete');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed.');
@@ -175,6 +181,7 @@ export default function LiveLabPage() {
   const structuredReqs: StructuredRequirement[] =
     session?.requirement_analysis?.requirements || [];
   const whiteBoxTests = session?.white_box_tests?.test_cases?.length || 0;
+  const blackBoxTests = session?.black_box_tests?.test_count || 0;
 
   return (
     <>
@@ -394,6 +401,40 @@ export default function LiveLabPage() {
                   </motion.div>
                 ))}
               </AnimatePresence>
+            </div>
+          </div>
+        )}
+        {blackBoxTests > 0 && (
+          <div className="max-w-7xl mx-auto mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white">Black-Box Tests (Task 6)</h3>
+              <span className="flex items-center gap-1.5 text-green-500 text-sm">
+                <CheckCircle2 className="w-4 h-4" />
+                {blackBoxTests} requirement-driven cases
+                {session?.black_box_tests?.generation_source
+                  ? ` · ${session.black_box_tests.generation_source}`
+                  : ''}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(session?.black_box_tests?.requirements || []).map((req) => (
+                <motion.div
+                  key={req.requirement_id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-xl border border-blue-500/20 bg-blue-500/5"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-xs text-yellow-500">{req.requirement_id}</span>
+                    <span className="text-xs text-neutral-500">{req.case_count} cases</span>
+                  </div>
+                  <ul className="text-sm text-neutral-300 space-y-1">
+                    {(req.cases || []).slice(0, 3).map((c) => (
+                      <li key={c.case_id} className="truncate">{c.description}</li>
+                    ))}
+                  </ul>
+                </motion.div>
+              ))}
             </div>
           </div>
         )}

@@ -9,7 +9,7 @@ An AI-assisted testing tool that analyzes a Python source file and natural-langu
 - Accepts a Python source file and requirements written in natural language.
 - Analyzes Python functions and branches using the built-in AST module.
 - Converts requirements into structured, traceable requirement records using NVIDIA NIM (with Ollama fallback) when configured, with a heuristic fallback if LLM calls fail.
-- Generates white-box tests and additional negative and same-file integration-style tests.
+- Generates white-box tests (code-structure driven), black-box tests (requirements and public API only), and additional negative and same-file integration-style tests.
 - Executes generated tests with pytest and measures coverage with coverage.py.
 - Stores run data in a session directory and generates a downloadable HTML report.
 

@@ -66,6 +66,18 @@ export type SessionPayload = {
     overall_line_coverage_percent?: number;
     overall_branch_coverage_percent?: number;
   } | null;
+  black_box_tests?: {
+    test_count?: number;
+    requirement_count?: number;
+    generation_source?: string;
+    files_written?: string[];
+    requirements?: {
+      requirement_id: string;
+      case_count?: number;
+      cases?: { case_id: string; description: string; requirement_id: string }[];
+    }[];
+    test_cases?: unknown[];
+  } | null;
   other_tests?: {
     integration_count?: number;
     negative_count?: number;
@@ -139,6 +151,10 @@ export async function runRequirementAnalysis(sessionId: string): Promise<Session
 
 export async function runWhiteBoxTests(sessionId: string): Promise<SessionPayload> {
   return request(`/api/sessions/${sessionId}/white-box-tests`, { method: 'POST' });
+}
+
+export async function runBlackBoxTests(sessionId: string): Promise<SessionPayload> {
+  return request(`/api/sessions/${sessionId}/black-box-tests`, { method: 'POST' });
 }
 
 export async function runOtherTests(sessionId: string): Promise<SessionPayload> {

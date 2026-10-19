@@ -49,7 +49,8 @@ function summarize(session: SessionPayload | null) {
   const completeness =
     (functions.length ? 0.25 : 0) +
     (reqs.length ? 0.25 : 0) +
-    ((session?.white_box_tests?.test_count || 0) > 0 ? 0.25 : 0) +
+    ((session?.white_box_tests?.test_count || 0) > 0 ? 0.2 : 0) +
+    ((session?.black_box_tests?.test_count || 0) > 0 ? 0.15 : 0) +
     (execution?.total ? 0.25 : 0);
   return { functions, reqs, branches, complexity, completeness, execution, coveragePct };
 }
