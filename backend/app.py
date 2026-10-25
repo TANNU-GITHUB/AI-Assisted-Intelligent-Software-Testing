@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
+from auth.github_routes import router as github_router
 from auth.routes import get_current_user, router as auth_router
 from auth.session_access import assert_session_owner
 from auth.store import UserRecord, init_db
@@ -44,6 +45,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(github_router)
 
 app.add_middleware(
     CORSMiddleware,

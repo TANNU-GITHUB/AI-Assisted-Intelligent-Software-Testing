@@ -2,18 +2,18 @@
 
 An AI-assisted testing tool that analyzes a Python source file and natural-language requirements, generates tests, executes them, measures coverage, and produces a report.
 
-> **Current scope:** The Live Lab currently works with one Python source file at a time. It primarily supports unit testing, with additional negative and limited integration-style tests for function interactions within that same file. GitHub repository testing and diagram-based requirements are future work.
+> **Current scope:** The Live Lab currently works with one Python source file at a time. After signing in, you can connect GitHub and import a `.py` file (plus optional requirements text) from a repository you have access to. Testing is still per-file unit/black-box/integration/negative generation, not whole-repo integration testing. Diagram-based requirements are future work.
 
 ## What the project does today
 
-- Accepts a Python source file and requirements written in natural language.
+- Accepts a Python source file and requirements written in natural language, including files imported from a connected GitHub account.
 - Analyzes Python functions and branches using the built-in AST module.
 - Converts requirements into structured, traceable requirement records using NVIDIA NIM (with Ollama fallback) when configured, with a heuristic fallback if LLM calls fail.
 - Generates white-box tests (code-structure driven), black-box tests (requirements and public API only), and additional negative and same-file integration-style tests.
 - Executes generated tests with pytest and measures coverage with coverage.py.
 - Stores run data in a session directory and generates a downloadable HTML report.
 
-The current system does **not** fetch or test a GitHub repository, accept diagrams or flowcharts as requirements, or perform mutation testing.
+The current system does **not** run whole-repository integration testing across all modules, accept diagrams or flowcharts as requirements, or perform mutation testing.
 
 ## Architecture
 
@@ -212,7 +212,7 @@ The smoke tests check basic frontend pages and can check backend health when the
 
 These are planned extensions, not features in the current user-facing workflow:
 
-- **GitHub-based repository integration testing:** Allow a user to provide a GitHub repository link so the system can analyze project modules and generate tests across component boundaries. Repository access and safe execution need to be addressed.
+- **GitHub-based repository integration testing:** Connected GitHub import currently loads one source file for the existing Live Lab pipeline. Analyzing an entire repository across module boundaries remains future work.
 - **Diagram and flowchart requirements:** Allow users to provide diagrams or flowcharts, interpret them as behavioral scenarios, and generate tests from the resulting structured requirements.
 - **Jev semantic UI testing:** The repository contains an internal Jev prototype, but it is not part of the current demo or user-facing workflow.
 - **Broader testing improvements:** Additional languages, mutation testing, and coverage-guided iterative test refinement may be considered as future work.

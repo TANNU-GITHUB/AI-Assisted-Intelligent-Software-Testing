@@ -2,12 +2,20 @@ import { AUTH_COOKIE_NAME, AUTH_TOKEN_KEY } from './auth-constants';
 
 export { AUTH_COOKIE_NAME, AUTH_TOKEN_KEY };
 
+export type GitHubProfile = {
+  connected: boolean;
+  login?: string;
+  avatar_url?: string | null;
+  connected_at?: string;
+};
+
 export type PublicUser = {
   id: string;
   username: string;
   email: string | null;
   auth_provider: 'local' | 'google';
   created_at: string;
+  github?: GitHubProfile;
 };
 
 export type AuthResponse = {
@@ -111,4 +119,34 @@ export async function completeGoogleOAuth(code: string, state: string): Promise<
 
 export function logout() {
   clearAccessToken();
+}
+
+export async function getGitHubAuthUrl(): Promise<{ url: string; state: string }> {
+  const res = await fetch(apiUrl('/api/github/url'), { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json() as Promise<{ url: string; state: string }>;
+}
+
+export async function completeGitHubOAuth(code: string, state: string): Promise<GitHubProfile> {
+  const res = await fetch(apiUrl('/api/github/callback'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ code, state }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json() as Promise<GitHubProfile>;
+}
+
+export async function fetchGitHubStatus(): Promise<GitHubProfile> {
+  const res = await fetch(apiUrl('/api/github/status'), { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json() as Promise<GitHubProfile>;
+}
+
+export async function disconnectGitHub(): Promise<void> {
+  const res = await fetch(apiUrl('/api/github/connection'), {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readError(res));
 }

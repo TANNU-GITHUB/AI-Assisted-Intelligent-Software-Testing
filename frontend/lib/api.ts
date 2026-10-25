@@ -191,6 +191,62 @@ export async function downloadSessionReport(sessionId: string): Promise<void> {
   URL.revokeObjectURL(objectUrl);
 }
 
+export type GitHubRepo = {
+  id: number;
+  full_name: string;
+  name: string;
+  owner: string;
+  private: boolean;
+  description: string | null;
+  language: string | null;
+  html_url: string;
+  updated_at: string | null;
+};
+
+export type GitHubEntry = {
+  name: string;
+  path: string;
+  type: 'dir' | 'file';
+  size?: number;
+  kind?: 'source' | 'requirements';
+};
+
+export async function listGitHubRepos(page = 1): Promise<{
+  repos: GitHubRepo[];
+  page: number;
+  has_more: boolean;
+}> {
+  return request(`/api/github/repos?page=${page}`);
+}
+
+export async function listGitHubContents(
+  owner: string,
+  repo: string,
+  path = ''
+): Promise<{ owner: string; repo: string; path: string; entries: GitHubEntry[] }> {
+  const qs = new URLSearchParams({ owner, repo, path });
+  return request(`/api/github/contents?${qs.toString()}`);
+}
+
+export async function importFromGitHub(body: {
+  owner: string;
+  repo: string;
+  source_path: string;
+  requirements_path?: string | null;
+}): Promise<{
+  filename: string;
+  source_code: string;
+  requirements_text: string;
+  repo: string;
+  source_path: string;
+}> {
+  return request('/api/github/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 export function persistSessionId(sessionId: string) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);

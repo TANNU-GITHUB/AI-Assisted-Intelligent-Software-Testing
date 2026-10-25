@@ -1,1 +1,1 @@
-"""User authentication: local accounts and Google OAuth."""
+"""User authentication: local accounts, Google OAuth, and GitHub repo access."""

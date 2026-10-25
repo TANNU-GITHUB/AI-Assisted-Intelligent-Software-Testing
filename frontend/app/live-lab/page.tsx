@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'motion/react';
 import { Footer } from '@/components/navigation/Footer';
 import { LabButton } from '@/components/ui/LabButton';
+import { GitHubPicker } from '@/components/github/GitHubPicker';
 import {
   RotateCcw,
   Code2,
@@ -216,6 +217,16 @@ export default function LiveLabPage() {
             </div>
           </div>
         </div>
+
+        <GitHubPicker
+          disabled={phase === 'running'}
+          onImported={({ filename: name, source_code, requirements_text }) => {
+            setFilename(name);
+            setSourceCode(source_code);
+            if (requirements_text.trim()) setRequirements(requirements_text);
+            setError(null);
+          }}
+        />
 
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
