@@ -25,6 +25,7 @@ from input_handler.handler import (
 from pipeline import run_phase1
 from requirement_analysis.analyzer import RequirementAnalysisError, analyze_session_requirements
 from test_generation.black_box import BlackBoxError, analyze_session_black_box
+from test_generation.gap_fill import GapFillError, analyze_session_gap_fill
 from test_generation.other_tests import OtherTestsError, analyze_session_other_tests
 from test_generation.white_box import WhiteBoxError, analyze_session_white_box
 from execution.analyzer import CoverageError, ExecutionError, analyze_session_coverage, analyze_session_execution
@@ -231,6 +232,18 @@ def run_execute_tests(session_id: str, user: UserRecord = Depends(get_current_us
     except ExecutionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     
+@app.post("/api/sessions/{session_id}/gap-fill-tests")
+def run_gap_fill_tests(session_id: str, user: UserRecord = Depends(get_current_user)):
+    try:
+        _protected_session(session_id, user)
+        analyze_session_gap_fill(session_id)
+        return session_with_files(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GapFillError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/sessions/{session_id}/coverage")
 def run_coverage(session_id: str, user: UserRecord = Depends(get_current_user)):
     try:

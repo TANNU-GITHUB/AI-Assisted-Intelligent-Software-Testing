@@ -60,11 +60,45 @@ export type SessionPayload = {
     failed?: number;
     errors?: number;
     flaky?: number;
-    tests?: { test_id?: string; status?: string; requirement_id?: string | null }[];
+    tests?: {
+      test_id?: string;
+      status?: string;
+      requirement_id?: string | null;
+      error_message?: string | null;
+      why_failed?: string | null;
+      how_to_fix?: string | null;
+      requirement_condition?: string | null;
+      requirement_expected?: string | null;
+      expected_value?: string | null;
+      actual_value?: string | null;
+    }[];
+  } | null;
+  requirement_coverage?: {
+    requirement_count?: number;
+    tested_count?: number;
+    passed_count?: number;
+    failed_count?: number;
+    untested_count?: number;
+    coverage_percent?: number | null;
+    requirements?: {
+      requirement_id: string;
+      condition?: string;
+      expected_result?: string;
+      status: string;
+      test_count?: number;
+      failed_count?: number;
+    }[];
   } | null;
   coverage?: {
     overall_line_coverage_percent?: number;
     overall_branch_coverage_percent?: number;
+    missing_lines?: number[];
+    source_lines?: { lineno: number; text: string; status: 'covered' | 'missed' | 'non_executable' }[];
+    function_coverage?: {
+      function: string;
+      line_coverage_percent?: number | null;
+      has_uncovered_branch?: boolean;
+    }[];
   } | null;
   black_box_tests?: {
     test_count?: number;
@@ -167,6 +201,10 @@ export async function runExecuteTests(sessionId: string): Promise<SessionPayload
 
 export async function runCoverage(sessionId: string): Promise<SessionPayload> {
   return request(`/api/sessions/${sessionId}/coverage`, { method: 'POST' });
+}
+
+export async function runGapFillTests(sessionId: string): Promise<SessionPayload> {
+  return request(`/api/sessions/${sessionId}/gap-fill-tests`, { method: 'POST' });
 }
 
 export async function getSession(sessionId: string): Promise<SessionPayload> {

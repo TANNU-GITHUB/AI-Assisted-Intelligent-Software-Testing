@@ -12,6 +12,7 @@ import {
   Code2,
   FileText,
   FileDown,
+  XCircle,
 } from 'lucide-react';
 import {
   downloadSessionReport,
@@ -77,6 +78,11 @@ export default function DashboardPage() {
 
   const { functions, reqs, branches, complexity, completeness, execution, coveragePct } =
     summarize(session);
+  const failedTests = (execution?.tests || []).filter(
+    (t) => t.status === 'failed' || t.status === 'error'
+  );
+  const reqCoverage = session?.requirement_coverage;
+  const sourceLines = session?.coverage?.source_lines || [];
 
   return (
     <>
@@ -280,6 +286,116 @@ export default function DashboardPage() {
             </table>
           </div>
         </div>
+
+        {failedTests.length > 0 && (
+          <div className="max-w-7xl mx-auto mt-8 rounded-2xl border border-red-500/30 bg-neutral-950 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-red-500/20">
+              <XCircle className="w-4 h-4 text-red-400" />
+              <span className="font-mono text-xs text-neutral-400 tracking-wider">
+                FAILED TESTS — WHY THEY FAILED
+              </span>
+            </div>
+            <div className="divide-y divide-neutral-900">
+              {failedTests.map((test) => (
+                <div key={test.test_id} className="p-4">
+                  <p className="font-mono text-xs text-red-400 mb-1">{test.test_id}</p>
+                  {test.requirement_id && (
+                    <p className="text-xs text-yellow-500 mb-1">
+                      {test.requirement_id}
+                      {test.requirement_condition ? ` — ${test.requirement_condition}` : ''}
+                    </p>
+                  )}
+                  <p className="text-sm text-white mb-1">{test.why_failed || 'This test failed.'}</p>
+                  <p className="text-sm text-neutral-300">{test.how_to_fix}</p>
+                  {test.error_message && (
+                    <pre className="mt-2 text-[11px] text-neutral-500 whitespace-pre-wrap max-h-32 overflow-auto">
+                      {test.error_message}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {reqCoverage && (reqCoverage.requirements?.length || 0) > 0 && (
+          <div className="max-w-7xl mx-auto mt-8 rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800">
+              <FileText className="w-4 h-4 text-yellow-500" />
+              <span className="font-mono text-xs text-neutral-400 tracking-wider">
+                REQUIREMENT FILE COVERAGE
+              </span>
+              <span className="ml-auto text-xs text-neutral-500">
+                {reqCoverage.tested_count}/{reqCoverage.requirement_count}
+                {reqCoverage.coverage_percent != null ? ` · ${reqCoverage.coverage_percent}%` : ''}
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-800">
+                    {['Req ID', 'Condition', 'Status', 'Tests'].map((h) => (
+                      <th
+                        key={h}
+                        className="px-4 py-3 text-left text-xs font-mono text-neutral-500 uppercase tracking-wider"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(reqCoverage.requirements || []).map((row) => (
+                    <tr key={row.requirement_id} className="border-b border-neutral-900">
+                      <td className="px-4 py-3 font-mono text-xs text-yellow-500">{row.requirement_id}</td>
+                      <td className="px-4 py-3 text-xs text-white">{row.condition}</td>
+                      <td className={`px-4 py-3 text-xs ${
+                        row.status === 'passed'
+                          ? 'text-green-500'
+                          : row.status === 'failed'
+                          ? 'text-red-400'
+                          : 'text-neutral-500'
+                      }`}>
+                        {row.status}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-neutral-400">{row.test_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {sourceLines.length > 0 && (
+          <div className="max-w-7xl mx-auto mt-8 rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800">
+              <Target className="w-4 h-4 text-yellow-500" />
+              <span className="font-mono text-xs text-neutral-400 tracking-wider">SOURCE LINE COVERAGE</span>
+              <span className="ml-auto text-xs text-neutral-500">
+                {coveragePct != null ? `${coveragePct}%` : ''}
+              </span>
+            </div>
+            <pre className="p-4 max-h-96 overflow-auto font-mono text-xs leading-5">
+              {sourceLines.map((line) => (
+                <div
+                  key={line.lineno}
+                  className={
+                    line.status === 'missed'
+                      ? 'text-red-400 bg-red-500/10'
+                      : line.status === 'covered'
+                      ? 'text-green-500/80'
+                      : 'text-neutral-600'
+                  }
+                >
+                  <span className="inline-block w-10 text-neutral-600">{line.lineno}</span>
+                  {line.status === 'missed' ? '✗ ' : '  '}
+                  {line.text}
+                </div>
+              ))}
+            </pre>
+          </div>
+        )}
       </section>
 
       <Footer />

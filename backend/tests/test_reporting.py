@@ -35,6 +35,7 @@ def test_report_data_links_tests_and_marks_flaky_cases():
                     "status": "passed",
                     "flaky": True,
                     "error_message": None,
+                    "why_failed": None,
                 },
                 {
                     "test_id": "tests/test_other.py::test_ok",

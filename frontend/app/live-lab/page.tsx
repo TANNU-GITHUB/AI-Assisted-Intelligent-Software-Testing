@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Loader2,
   Zap,
+  XCircle,
 } from 'lucide-react';
 import {
   checkHealth,
@@ -27,6 +28,7 @@ import {
   runOtherTests,
   runExecuteTests,
   runCoverage,
+  runGapFillTests,
   type FunctionAnalysis,
   type SessionPayload,
   type StructuredRequirement,
@@ -70,6 +72,7 @@ const analysisStages = [
   { label: 'Generating integration & negative tests...', icon: FileText },
   { label: 'Executing generated tests...', icon: Cpu },
   { label: 'Measuring coverage...', icon: Cpu },
+  { label: 'Filling uncovered lines and requirements...', icon: FileText },
 ];
 
 export default function LiveLabPage() {
@@ -154,11 +157,34 @@ export default function LiveLabPage() {
       setSession(executed);
       setStageIndex(7);
 
-      const covered = await runCoverage(created.session_id);
+      let covered = await runCoverage(created.session_id);
       latest = covered;
-      persistSessionId(covered.session_id);
       setSession(covered);
       setStageIndex(8);
+
+      const missing = covered.coverage?.missing_lines?.length || 0;
+      const untested = covered.requirement_coverage?.untested_count || 0;
+      if (missing > 0 || untested > 0) {
+        try {
+          const filled = await runGapFillTests(created.session_id);
+          latest = filled;
+          setSession(filled);
+          const reexecuted = await runExecuteTests(created.session_id);
+          latest = reexecuted;
+          setSession(reexecuted);
+          covered = await runCoverage(created.session_id);
+          latest = covered;
+          setSession(covered);
+        } catch (gapErr) {
+          setError(
+            gapErr instanceof Error
+              ? `Coverage gap-fill skipped: ${gapErr.message}`
+              : 'Coverage gap-fill skipped.'
+          );
+        }
+      }
+      persistSessionId(covered.session_id);
+      setStageIndex(9);
       setPhase('complete');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed.');
@@ -183,6 +209,11 @@ export default function LiveLabPage() {
     session?.requirement_analysis?.requirements || [];
   const whiteBoxTests = session?.white_box_tests?.test_cases?.length || 0;
   const blackBoxTests = session?.black_box_tests?.test_count || 0;
+  const failedTests = (session?.test_execution?.tests || []).filter(
+    (t) => t.status === 'failed' || t.status === 'error'
+  );
+  const reqCoverage = session?.requirement_coverage;
+  const missedLines = (session?.coverage?.source_lines || []).filter((line) => line.status === 'missed');
 
   return (
     <>
@@ -476,6 +507,111 @@ export default function LiveLabPage() {
                   </motion.div>
                 ))}
             </div>
+          </div>
+        )}
+
+        {failedTests.length > 0 && (
+          <div className="max-w-7xl mx-auto mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white">Failed tests — fix your code</h3>
+              <span className="flex items-center gap-1.5 text-red-400 text-sm">
+                <XCircle className="w-4 h-4" />
+                {failedTests.length} failed
+              </span>
+            </div>
+            <div className="space-y-3">
+              {failedTests.map((test) => (
+                <div
+                  key={test.test_id}
+                  className="p-4 rounded-xl border border-red-500/30 bg-red-500/5"
+                >
+                  <p className="font-mono text-xs text-red-400 mb-1">{test.test_id}</p>
+                  {test.requirement_id && (
+                    <p className="text-xs text-yellow-500 mb-2">
+                      {test.requirement_id}
+                      {test.requirement_condition ? ` — ${test.requirement_condition}` : ''}
+                    </p>
+                  )}
+                  <p className="text-sm text-white mb-2">{test.why_failed || 'This test failed.'}</p>
+                  {test.expected_value && (
+                    <p className="text-xs text-neutral-400 mb-1">
+                      Expected {test.expected_value}
+                      {test.actual_value ? ` · got ${test.actual_value}` : ''}
+                    </p>
+                  )}
+                  <p className="text-sm text-neutral-300">{test.how_to_fix}</p>
+                  {test.error_message && (
+                    <pre className="mt-2 text-[11px] text-neutral-500 whitespace-pre-wrap max-h-40 overflow-auto">
+                      {test.error_message}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {reqCoverage && (reqCoverage.requirements?.length || 0) > 0 && (
+          <div className="max-w-7xl mx-auto mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white">Requirement coverage</h3>
+              <span className="text-sm text-neutral-400">
+                {reqCoverage.tested_count}/{reqCoverage.requirement_count} requirements tested
+                {reqCoverage.coverage_percent != null ? ` · ${reqCoverage.coverage_percent}%` : ''}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(reqCoverage.requirements || []).map((row) => (
+                <div
+                  key={row.requirement_id}
+                  className={`p-4 rounded-xl border ${
+                    row.status === 'passed'
+                      ? 'border-green-500/20 bg-green-500/5'
+                      : row.status === 'failed'
+                      ? 'border-red-500/30 bg-red-500/5'
+                      : 'border-neutral-800 bg-neutral-900/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-xs text-yellow-500">{row.requirement_id}</span>
+                    <span className="text-xs text-neutral-400">{row.status}</span>
+                  </div>
+                  <p className="text-sm text-white">{row.condition}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(session?.coverage?.source_lines?.length || 0) > 0 && (
+          <div className="max-w-7xl mx-auto mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white">Source line coverage</h3>
+              <span className="text-sm text-neutral-400">
+                {session?.coverage?.overall_line_coverage_percent != null
+                  ? `${session.coverage.overall_line_coverage_percent}% lines`
+                  : ''}
+                {missedLines.length ? ` · ${missedLines.length} missed` : ' · all measured lines hit'}
+              </span>
+            </div>
+            <pre className="p-4 rounded-xl border border-neutral-800 bg-neutral-950 overflow-auto max-h-96 font-mono text-xs leading-5">
+              {(session?.coverage?.source_lines || []).map((line) => (
+                <div
+                  key={line.lineno}
+                  className={
+                    line.status === 'missed'
+                      ? 'text-red-400 bg-red-500/10'
+                      : line.status === 'covered'
+                      ? 'text-green-500/80'
+                      : 'text-neutral-600'
+                  }
+                >
+                  <span className="inline-block w-10 text-neutral-600">{line.lineno}</span>
+                  {line.status === 'missed' ? '✗ ' : '  '}
+                  {line.text}
+                </div>
+              ))}
+            </pre>
           </div>
         )}
       </section>

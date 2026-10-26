@@ -21,6 +21,11 @@ import re
 import subprocess
 import sys
 
+from execution.diagnostics import (
+    build_requirement_coverage,
+    collected_requirement_ids,
+    enrich_test_result,
+)
 from input_handler.handler import load_session, save_session, session_dir
 from input_handler.session_logging import log_session_error
 
@@ -208,7 +213,11 @@ def analyze_session_execution(session_id: str) -> dict:
     except ExecutionError as exc:
         log_session_error(session_id, "execution", exc)
         raise
-    tests = [_test_result(test) for test in first_report.get("tests", [])]
+    requirements = (payload.get("requirement_analysis") or {}).get("requirements") or []
+    tests = [
+        enrich_test_result(_test_result(test), requirements)
+        for test in first_report.get("tests", [])
+    ]
     failed_ids = [
         test["test_id"]
         for test in tests
@@ -225,7 +234,7 @@ def analyze_session_execution(session_id: str) -> dict:
             log_session_error(session_id, "execution.retry", exc)
             raise
         retry_by_id = {
-            item.get("nodeid"): _test_result(item)
+            item.get("nodeid"): enrich_test_result(_test_result(item), requirements)
             for item in retry_report.get("tests", [])
         }
 
@@ -243,6 +252,7 @@ def analyze_session_execution(session_id: str) -> dict:
             test["duration_seconds"] = (test.get("duration_seconds") or 0) + (
                 retry.get("duration_seconds") or 0
             )
+            enrich_test_result(test, requirements)
 
         if test["initial_status"] in {"failed", "error"}:
             log_session_error(
@@ -273,6 +283,11 @@ def analyze_session_execution(session_id: str) -> dict:
     }
 
     payload["test_execution"] = result
+    payload["requirement_coverage"] = build_requirement_coverage(
+        requirements,
+        tests,
+        collected_requirement_ids(payload),
+    )
     save_session(payload)
     return payload
 
@@ -402,10 +417,14 @@ def analyze_session_coverage(session_id: str) -> dict:
     per_file_summary = {}
     for filename, data in files.items():
         summary = data.get("summary", {})
+        missing_line_list = list(data.get("missing_lines") or [])
+        executed_line_list = list(data.get("executed_lines") or [])
         per_file_summary[filename] = {
             "line_coverage_percent": summary.get("percent_covered"),
-            "covered_lines": summary.get("covered_lines"),
-            "missing_lines": summary.get("missing_lines"),
+            "covered_line_count": summary.get("covered_lines"),
+            "missing_line_count": summary.get("missing_lines"),
+            "missing_lines": missing_line_list,
+            "executed_lines": executed_line_list,
             "num_statements": summary.get("num_statements"),
             "num_branches": summary.get("num_branches"),
             "covered_branches": summary.get("covered_branches"),
@@ -413,6 +432,11 @@ def analyze_session_coverage(session_id: str) -> dict:
         }
 
     overall_line_coverage = overall.get("percent_covered")
+    branch_total = overall.get("num_branches") or 0
+    branch_covered = overall.get("covered_branches") or 0
+    overall_branch_coverage = (
+        round(100.0 * branch_covered / branch_total, 1) if branch_total else None
+    )
 
     # --- Per-function branch cross-referencing (needs Task 3 data) ---
     function_coverage: list[dict] = []
@@ -436,6 +460,22 @@ def analyze_session_coverage(session_id: str) -> dict:
             code_analysis, executed_lines, missing_branch_lines
         )
 
+    source_line_details: list[dict] = []
+    missing_line_numbers: list[int] = []
+    if source_path.is_file():
+        source_rows = source_path.read_text(encoding="utf-8").splitlines()
+        executed_set = set((source_file_data or {}).get("executed_lines") or [])
+        missing_set = set((source_file_data or {}).get("missing_lines") or [])
+        missing_line_numbers = sorted(missing_set)
+        for index, text in enumerate(source_rows, start=1):
+            if index in missing_set:
+                status = "missed"
+            elif index in executed_set:
+                status = "covered"
+            else:
+                status = "non_executable"
+            source_line_details.append({"lineno": index, "text": text, "status": status})
+
     # --- Consolidate with test_execution results, if already run ---
     test_execution = payload.get("test_execution") or {}
     consolidated = []
@@ -445,12 +485,17 @@ def analyze_session_coverage(session_id: str) -> dict:
                 "test_id": test.get("test_id"),
                 "status": test.get("status"),
                 "error_message": test.get("error_message"),
+                "why_failed": test.get("why_failed"),
+                "how_to_fix": test.get("how_to_fix"),
                 "overall_line_coverage_percent": overall_line_coverage,
             }
         )
 
     result = {
         "overall_line_coverage_percent": overall_line_coverage,
+        "overall_branch_coverage_percent": overall_branch_coverage,
+        "missing_lines": missing_line_numbers,
+        "source_lines": source_line_details,
         "per_file": per_file_summary,
         "function_coverage": function_coverage,
         "function_coverage_note": function_coverage_note,
@@ -458,5 +503,11 @@ def analyze_session_coverage(session_id: str) -> dict:
     }
 
     payload["coverage"] = result
+    requirements = (payload.get("requirement_analysis") or {}).get("requirements") or []
+    payload["requirement_coverage"] = build_requirement_coverage(
+        requirements,
+        test_execution.get("tests") or [],
+        collected_requirement_ids(payload),
+    )
     save_session(payload)
     return payload

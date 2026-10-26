@@ -61,12 +61,43 @@
   {% elif coverage_note %}<p class="muted">{{ coverage_note }}</p>{% else %}<p class="muted">No function coverage is available.</p>{% endif %}
   {% for warning in coverage_warnings %}<div class="warning">{{ warning }}</div>{% endfor %}
 
-  <h2>Defects</h2>
+  <h2>Failed tests — why they failed</h2>
   {% if defects %}
-  <table><thead><tr><th>Test</th><th>Requirement</th><th>Result</th><th>Error details</th></tr></thead><tbody>
-  {% for test in defects %}<tr><td>{{ test.test_id }}</td><td>{{ test.requirement_id or "Unlinked" }}</td><td class="fail">{{ test.status }}</td><td><pre>{{ test.error_message or "No error details reported." }}</pre></td></tr>{% endfor %}
+  <table><thead><tr><th>Test</th><th>Requirement</th><th>Why it failed</th><th>How to fix the code</th></tr></thead><tbody>
+  {% for test in defects %}
+    <tr>
+      <td>{{ test.test_id }}</td>
+      <td>{{ test.requirement_id or "Unlinked" }}{% if test.requirement_condition %}<br><span class="muted">{{ test.requirement_condition }}</span>{% endif %}</td>
+      <td class="fail">{{ test.why_failed or test.status }}<pre>{{ test.error_message or "" }}</pre></td>
+      <td>{{ test.how_to_fix or "Update source.py so this input matches the requirement, then re-run." }}</td>
+    </tr>
+  {% endfor %}
   </tbody></table>
   {% else %}<p class="pass">No failing tests reported.</p>{% endif %}
+
+  <h2>Requirement file coverage</h2>
+  {% if requirement_coverage and requirement_coverage.requirements %}
+  <p class="meta">{{ requirement_coverage.tested_count }}/{{ requirement_coverage.requirement_count }} requirements have executed tests
+    {% if requirement_coverage.coverage_percent is not none %}({{ requirement_coverage.coverage_percent }}%){% endif %}</p>
+  <table><thead><tr><th>Requirement</th><th>Status</th><th>Linked tests</th></tr></thead><tbody>
+  {% for row in requirement_coverage.requirements %}
+    <tr>
+      <td><strong>{{ row.requirement_id }}</strong><br>{{ row.condition }}</td>
+      <td>{% if row.status == "passed" %}<span class="pass">Covered / pass</span>{% elif row.status == "failed" %}<span class="fail">Covered / fail</span>{% else %}<span class="muted">Not covered</span>{% endif %}</td>
+      <td>{{ row.test_count }}</td>
+    </tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<p class="muted">No requirement coverage is available.</p>{% endif %}
+
+  <h2>Uncovered source lines</h2>
+  {% if missing_lines %}
+  <p class="warning">These executable lines in source.py were not hit: {{ missing_lines|join(", ") }}</p>
+  {% if source_lines %}
+  <pre>{% for line in source_lines %}{% if line.status == "missed" %}{{ line.lineno }} ✗ {{ line.text }}
+{% endif %}{% endfor %}</pre>
+  {% endif %}
+  {% else %}<p class="pass">All measured source lines were executed.</p>{% endif %}
 </main>
 </body>
 </html>
