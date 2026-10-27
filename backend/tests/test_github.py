@@ -109,6 +109,38 @@ def test_github_repos_and_import(client, monkeypatch):
     assert body["filename"] == "app.py"
 
 
+def test_github_project_agent_runs_pipeline(client, monkeypatch):
+    headers = register_user(client)
+    me = client.get("/api/auth/me", headers=headers).json()
+    upsert_github_connection(
+        user_id=me["id"],
+        github_id="1",
+        login="octocat",
+        avatar_url=None,
+        access_token_enc=encrypt_secret("ghs_test"),
+        scope="repo",
+    )
+
+    def fake_agent(**kwargs):
+        assert kwargs["owner"] == "octocat"
+        assert kwargs["repo"] == "demo"
+        return {
+            "session_id": "agentdemo",
+            "status": "github_project_tested",
+            "source_code": "def add(a, b):\n    return a + b\n",
+            "github_agent": {"full_name": "octocat/demo", "python_files_tested": ["app.py"]},
+        }
+
+    monkeypatch.setattr("agents.github_project_agent.run_github_project_agent", fake_agent)
+    res = client.post(
+        "/api/github/project-agent",
+        json={"owner": "octocat", "repo": "demo"},
+        headers=headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["github_agent"]["full_name"] == "octocat/demo"
+
+
 def test_github_import_rejects_path_traversal(client):
     headers = register_user(client)
     res = client.post(

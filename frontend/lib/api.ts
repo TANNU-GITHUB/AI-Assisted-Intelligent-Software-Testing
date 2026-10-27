@@ -116,6 +116,17 @@ export type SessionPayload = {
     integration_count?: number;
     negative_count?: number;
   } | null;
+  github_agent?: {
+    full_name?: string;
+    python_file_count?: number;
+    python_files_tested?: string[];
+    requirement_files?: string[];
+    function_count?: number;
+    truncated_python?: number;
+    included_modules?: { path: string; functions: string[] }[];
+    skipped_modules?: { path: string; reason: string }[];
+    stages?: { name: string; status: string; detail?: string }[];
+  } | null;
 };
 
 function apiUrl(path: string): string {
@@ -264,6 +275,17 @@ export async function listGitHubContents(
 ): Promise<{ owner: string; repo: string; path: string; entries: GitHubEntry[] }> {
   const qs = new URLSearchParams({ owner, repo, path });
   return request(`/api/github/contents?${qs.toString()}`);
+}
+
+export async function runGitHubProjectAgent(body: {
+  owner: string;
+  repo: string;
+}): Promise<SessionPayload> {
+  return request('/api/github/project-agent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }
 
 export async function importFromGitHub(body: {

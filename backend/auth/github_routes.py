@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import re
 from typing import Any
 
@@ -13,6 +12,7 @@ from auth.github_oauth import (
     GitHubOAuthError,
     consume_github_state,
     create_github_auth_url,
+    decode_github_file,
     exchange_code_for_github,
     github_request,
 )
@@ -47,6 +47,11 @@ class ImportBody(BaseModel):
     requirements_path: str | None = Field(default=None, max_length=500)
 
 
+class ProjectAgentBody(BaseModel):
+    owner: str = Field(min_length=1, max_length=100)
+    repo: str = Field(min_length=1, max_length=100)
+
+
 def _require_repo_parts(owner: str, repo: str) -> tuple[str, str]:
     if not _REPO_NAME.fullmatch(owner) or not _REPO_NAME.fullmatch(repo):
         raise HTTPException(status_code=400, detail="Invalid repository name.")
@@ -71,26 +76,10 @@ def _access_token(user: UserRecord) -> str:
 
 
 def _decode_file_content(payload: dict[str, Any]) -> str:
-    if payload.get("type") != "file":
-        raise HTTPException(status_code=400, detail="That GitHub path is not a file.")
-    size = int(payload.get("size") or 0)
-    if size > _MAX_FILE_BYTES:
-        raise HTTPException(status_code=400, detail="File is too large to import (max 400 KB).")
-    encoding = payload.get("encoding")
-    content = payload.get("content") or ""
-    if encoding == "base64":
-        try:
-            raw = base64.b64decode(content)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail="Could not decode GitHub file.") from exc
-    else:
-        raw = str(content).encode("utf-8")
-    if len(raw) > _MAX_FILE_BYTES:
-        raise HTTPException(status_code=400, detail="File is too large to import (max 400 KB).")
     try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="File is not UTF-8 text.") from exc
+        return decode_github_file(payload, max_bytes=_MAX_FILE_BYTES)
+    except GitHubOAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/url")
@@ -264,3 +253,25 @@ def import_from_github(
         "repo": f"{owner}/{repo}",
         "source_path": source_path,
     }
+
+
+@router.post("/project-agent")
+def run_project_agent(
+    body: ProjectAgentBody,
+    user: UserRecord = Depends(get_current_user),
+) -> dict[str, Any]:
+    owner, repo = _require_repo_parts(body.owner, body.repo)
+    token = _access_token(user)
+    from agents.github_project_agent import GitHubProjectAgentError, run_github_project_agent
+
+    try:
+        return run_github_project_agent(
+            token=token,
+            owner=owner,
+            repo=repo,
+            owner_user_id=user.id,
+        )
+    except GitHubProjectAgentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except GitHubOAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

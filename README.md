@@ -2,18 +2,19 @@
 
 An AI-assisted testing tool that analyzes a Python source file and natural-language requirements, generates tests, executes them, measures coverage, and produces a report.
 
-> **Current scope:** The Live Lab currently works with one Python source file at a time. After signing in, you can connect GitHub and import a `.py` file (plus optional requirements text) from a repository you have access to. Testing is still per-file unit/black-box/integration/negative generation, not whole-repo integration testing. Diagram-based requirements are future work.
+> **Current scope:** Live Lab can test a single Python file, or — after GitHub access is granted — run a project agent that walks the repository, combines top-level Python functions, and runs white-box plus black-box testing on that combined project. Class methods, non-Python languages, and true cross-package integration (real import graphs) are still limited. Diagram-based requirements are future work.
 
 ## What the project does today
 
 - Accepts a Python source file and requirements written in natural language, including files imported from a connected GitHub account.
+- Can walk a connected GitHub repository, collect Python modules and requirement docs, and run the full white-box / black-box pipeline on the combined project.
 - Analyzes Python functions and branches using the built-in AST module.
 - Converts requirements into structured, traceable requirement records using NVIDIA NIM (with Ollama fallback) when configured, with a heuristic fallback if LLM calls fail.
 - Generates white-box tests (code-structure driven), black-box tests (requirements and public API only), and additional negative and same-file integration-style tests.
 - Executes generated tests with pytest and measures coverage with coverage.py.
 - Stores run data in a session directory and generates a downloadable HTML report.
 
-The current system does **not** run whole-repository integration testing across all modules, accept diagrams or flowcharts as requirements, or perform mutation testing.
+The current system does **not** execute the original package import graph as-is, accept diagrams or flowcharts as requirements, or perform mutation testing.
 
 ## Architecture
 
@@ -212,7 +213,7 @@ The smoke tests check basic frontend pages and can check backend health when the
 
 These are planned extensions, not features in the current user-facing workflow:
 
-- **GitHub-based repository integration testing:** Connected GitHub import currently loads one source file for the existing Live Lab pipeline. Analyzing an entire repository across module boundaries remains future work.
+- **GitHub-based repository integration testing:** The project agent now walks a connected repo and tests combined top-level functions. Running tests against the original package layout and import graph remains future work.
 - **Diagram and flowchart requirements:** Allow users to provide diagrams or flowcharts, interpret them as behavioral scenarios, and generate tests from the resulting structured requirements.
 - **Jev semantic UI testing:** The repository contains an internal Jev prototype, but it is not part of the current demo or user-facing workflow.
 - **Broader testing improvements:** Additional languages, mutation testing, and coverage-guided iterative test refinement may be considered as future work.

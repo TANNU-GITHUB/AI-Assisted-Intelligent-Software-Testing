@@ -257,6 +257,25 @@ export default function LiveLabPage() {
             if (requirements_text.trim()) setRequirements(requirements_text);
             setError(null);
           }}
+          onProjectStart={() => {
+            setError(null);
+            setSession(null);
+            setPhase('running');
+            setStageIndex(0);
+          }}
+          onProjectFailed={(message) => {
+            setError(message);
+            setPhase('idle');
+          }}
+          onProjectTested={(payload) => {
+            persistSessionId(payload.session_id);
+            setSession(payload);
+            setFilename(payload.inputs?.original_filename || `${payload.github_agent?.full_name || 'project'}_combined.py`);
+            if (payload.source_code) setSourceCode(payload.source_code);
+            if (payload.requirements_text) setRequirements(payload.requirements_text);
+            setStageIndex(analysisStages.length);
+            setPhase('complete');
+          }}
         />
 
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -377,6 +396,33 @@ export default function LiveLabPage() {
             </div>
           )}
         </div>
+
+        {session?.github_agent && (
+          <div className="max-w-7xl mx-auto mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white">GitHub project agent</h3>
+              <span className="text-sm text-neutral-400">
+                {session.github_agent.full_name} · {session.github_agent.python_files_tested?.length || 0} modules
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(session.github_agent.included_modules || []).map((mod) => (
+                <div
+                  key={mod.path}
+                  className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5"
+                >
+                  <p className="font-mono text-xs text-yellow-500 mb-2">{mod.path}</p>
+                  <p className="text-sm text-white">{mod.functions.length} functions tested</p>
+                </div>
+              ))}
+            </div>
+            {(session.github_agent.skipped_modules?.length || 0) > 0 && (
+              <p className="mt-3 text-xs text-neutral-500">
+                Skipped {session.github_agent.skipped_modules?.length} paths (tests, syntax errors, or no top-level functions).
+              </p>
+            )}
+          </div>
+        )}
 
         {functions.length > 0 && (
           <div className="max-w-7xl mx-auto mt-8">

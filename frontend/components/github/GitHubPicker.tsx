@@ -12,8 +12,10 @@ import {
   importFromGitHub,
   listGitHubContents,
   listGitHubRepos,
+  runGitHubProjectAgent,
   type GitHubEntry,
   type GitHubRepo,
+  type SessionPayload,
 } from '@/lib/api';
 
 type Props = {
@@ -23,9 +25,18 @@ type Props = {
     source_code: string;
     requirements_text: string;
   }) => void;
+  onProjectTested?: (session: SessionPayload) => void;
+  onProjectStart?: () => void;
+  onProjectFailed?: (message: string) => void;
 };
 
-export function GitHubPicker({ disabled, onImported }: Props) {
+export function GitHubPicker({
+  disabled,
+  onImported,
+  onProjectTested,
+  onProjectStart,
+  onProjectFailed,
+}: Props) {
   const [status, setStatus] = useState<GitHubProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -37,6 +48,7 @@ export function GitHubPicker({ disabled, onImported }: Props) {
   const [sourcePath, setSourcePath] = useState<string | null>(null);
   const [reqPath, setReqPath] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [testingProject, setTestingProject] = useState(false);
 
   useEffect(() => {
     fetchGitHubStatus()
@@ -81,6 +93,31 @@ export function GitHubPicker({ disabled, onImported }: Props) {
     setSelected(null);
     setSourcePath(null);
     setReqPath(null);
+  }
+
+  async function testWholeProject() {
+    if (!selected) return;
+    setTestingProject(true);
+    setError(null);
+    onProjectStart?.();
+    try {
+      const session = await runGitHubProjectAgent({
+        owner: selected.owner,
+        repo: selected.name,
+      });
+      onImported({
+        filename: `${selected.name}_combined.py`,
+        source_code: session.source_code || '',
+        requirements_text: session.requirements_text || '',
+      });
+      onProjectTested?.(session);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Project agent failed.';
+      setError(message);
+      onProjectFailed?.(message);
+    } finally {
+      setTestingProject(false);
+    }
   }
 
   async function importSelected() {
@@ -144,8 +181,8 @@ export function GitHubPicker({ disabled, onImported }: Props) {
 
       {!status?.connected && (
         <p className="text-xs text-neutral-500">
-          Grant access to your GitHub repositories, then pick a Python file (and optional requirements
-          text) to load into Live Lab.
+          Grant access to your GitHub repositories, then test the whole repo with the project agent,
+          or pick a single Python file to load into Live Lab.
         </p>
       )}
 
@@ -280,9 +317,17 @@ export function GitHubPicker({ disabled, onImported }: Props) {
           </p>
           <button
             type="button"
-            disabled={disabled || !sourcePath || importing}
+            disabled={disabled || !selected || testingProject || importing}
+            onClick={testWholeProject}
+            className="ml-auto text-xs font-medium px-3 py-1.5 rounded-full border border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10 disabled:opacity-40"
+          >
+            {testingProject ? 'Testing whole project…' : 'Test whole repository'}
+          </button>
+          <button
+            type="button"
+            disabled={disabled || !sourcePath || importing || testingProject}
             onClick={importSelected}
-            className="ml-auto text-xs font-medium px-3 py-1.5 rounded-full bg-yellow-500 text-black hover:bg-yellow-400 disabled:opacity-40"
+            className="text-xs font-medium px-3 py-1.5 rounded-full bg-yellow-500 text-black hover:bg-yellow-400 disabled:opacity-40"
           >
             {importing ? 'Importing…' : 'Load into Live Lab'}
           </button>

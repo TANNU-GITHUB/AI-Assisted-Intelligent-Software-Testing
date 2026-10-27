@@ -94,8 +94,33 @@ def _github_headers(access_token: str) -> dict[str, str]:
     }
 
 
+def decode_github_file(payload: dict[str, Any], *, max_bytes: int = 400_000) -> str:
+    import base64
+
+    if payload.get("type") != "file":
+        raise GitHubOAuthError("That GitHub path is not a file.")
+    size = int(payload.get("size") or 0)
+    if size > max_bytes:
+        raise GitHubOAuthError(f"File is too large to import (max {max_bytes} bytes).")
+    encoding = payload.get("encoding")
+    content = payload.get("content") or ""
+    if encoding == "base64":
+        try:
+            raw = base64.b64decode(content)
+        except Exception as exc:  # noqa: BLE001
+            raise GitHubOAuthError("Could not decode GitHub file.") from exc
+    else:
+        raw = str(content).encode("utf-8")
+    if len(raw) > max_bytes:
+        raise GitHubOAuthError(f"File is too large to import (max {max_bytes} bytes).")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise GitHubOAuthError("File is not UTF-8 text.") from exc
+
+
 def github_request(access_token: str, path: str, params: dict[str, Any] | None = None) -> Any:
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=45.0) as client:
         res = client.get(
             f"{GITHUB_API}{path}",
             headers=_github_headers(access_token),
