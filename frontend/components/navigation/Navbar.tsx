@@ -21,8 +21,7 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<PublicUser | null>(null);
   const pathname = usePathname();
-  const { theme, toggleTheme } = useTheme();
-  const isLight = theme === 'light';
+  const { toggleTheme } = useTheme();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -58,9 +57,7 @@ export function Navbar() {
         <div
           className={`mx-auto transition-all duration-300 ${
             scrolled
-              ? isLight
-                ? 'mt-2 max-w-5xl bg-white/80 backdrop-blur-xl border border-amber-500/20 shadow-lg shadow-amber-500/5'
-                : 'mt-2 max-w-5xl bg-black/80 backdrop-blur-xl border border-yellow-500/10'
+              ? 'mt-2 max-w-5xl bg-white/80 dark:bg-black/80 backdrop-blur-xl border border-amber-500/20 dark:border-yellow-500/10 shadow-lg shadow-amber-500/5 dark:shadow-none'
               : 'max-w-7xl bg-transparent'
           } rounded-full px-4 sm:px-6`}
         >
@@ -70,7 +67,7 @@ export function Navbar() {
                 <Bug className="w-5 h-5 text-yellow-500 group-hover:rotate-12 transition-transform duration-300" />
                 <div className="absolute inset-0 bg-yellow-500/20 blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
-              <span className={`font-mono text-sm font-bold tracking-wider ${isLight ? 'text-slate-800' : 'text-white'}`}>
+              <span className="font-mono text-sm font-bold tracking-wider text-slate-800 dark:text-white">
                 BUG<span className="text-yellow-500">/</span>AI
               </span>
             </Link>
@@ -82,18 +79,12 @@ export function Navbar() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`relative px-4 py-2 text-sm transition-colors ${
-                      isLight
-                        ? 'text-slate-500 hover:text-slate-800'
-                        : 'text-neutral-400 hover:text-white'
-                    }`}
+                    className="relative px-4 py-2 text-sm transition-colors text-slate-500 dark:text-neutral-400 hover:text-slate-800 dark:hover:text-white"
                   >
                     {active && (
                       <motion.div
                         layoutId="nav-active"
-                        className={`absolute inset-0 rounded-full ${
-                          isLight ? 'bg-amber-500/15' : 'bg-yellow-500/10'
-                        }`}
+                        className="absolute inset-0 rounded-full bg-amber-500/15 dark:bg-yellow-500/10"
                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                       >
                         <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-yellow-500" />
@@ -112,41 +103,26 @@ export function Navbar() {
               <button
                 id="theme-toggle"
                 onClick={toggleTheme}
-                aria-label={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
-                title={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
-                className={`relative flex items-center justify-center w-9 h-9 rounded-full border transition-all duration-300 group ${
-                  isLight
-                    ? 'border-amber-400/40 bg-amber-50 hover:bg-amber-100 hover:border-amber-400'
-                    : 'border-yellow-500/20 bg-yellow-500/5 hover:bg-yellow-500/10 hover:border-yellow-500/40'
-                }`}
+                aria-label="Toggle theme"
+                title="Toggle theme"
+                className="relative flex items-center justify-center w-9 h-9 rounded-full border transition-all duration-300 group border-amber-400/40 dark:border-yellow-500/20 bg-amber-50 dark:bg-yellow-500/5 hover:bg-amber-100 dark:hover:bg-yellow-500/10 hover:border-amber-400 dark:hover:border-yellow-500/40"
               >
                 <motion.div
-                  key={theme}
                   initial={{ rotate: -180, scale: 0, opacity: 0 }}
                   animate={{ rotate: 0, scale: 1, opacity: 1 }}
                   transition={{ duration: 0.4, ease: 'easeOut' }}
                   className="relative"
                 >
                   <Bug
-                    className={`w-4 h-4 transition-colors ${
-                      isLight
-                        ? 'text-amber-600 group-hover:text-amber-700'
-                        : 'text-yellow-400 group-hover:text-yellow-300'
-                    }`}
+                    className="w-4 h-4 transition-colors text-amber-600 dark:text-yellow-400 group-hover:text-amber-700 dark:group-hover:text-yellow-300"
                   />
                   {/* Mode indicator dot */}
                   <span
-                    className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border-2 ${
-                      isLight
-                        ? 'bg-sky-400 border-amber-50'
-                        : 'bg-slate-600 border-slate-900'
-                    }`}
+                    className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border-2 bg-sky-400 dark:bg-slate-600 border-amber-50 dark:border-slate-900"
                   />
                 </motion.div>
                 {/* Glow */}
-                <div className={`absolute inset-0 rounded-full blur-md opacity-0 group-hover:opacity-60 transition-opacity ${
-                  isLight ? 'bg-amber-400/30' : 'bg-yellow-500/20'
-                }`} />
+                <div className="absolute inset-0 rounded-full blur-md opacity-0 group-hover:opacity-60 transition-opacity bg-amber-400/30 dark:bg-yellow-500/20" />
               </button>
 
               {user ? (
@@ -196,32 +172,26 @@ export function Navbar() {
               <button
                 id="theme-toggle-mobile"
                 onClick={toggleTheme}
-                aria-label={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
-                className={`relative flex items-center justify-center w-9 h-9 rounded-full border transition-all duration-300 group ${
-                  isLight
-                    ? 'border-amber-400/40 bg-amber-50'
-                    : 'border-yellow-500/20 bg-yellow-500/5'
-                }`}
+                aria-label="Toggle theme"
+                title="Toggle theme"
+                className="relative flex items-center justify-center w-9 h-9 rounded-full border transition-all duration-300 group border-amber-400/40 dark:border-yellow-500/20 bg-amber-50 dark:bg-yellow-500/5"
               >
                 <motion.div
-                  key={`mobile-${theme}`}
                   initial={{ rotate: -180, scale: 0 }}
                   animate={{ rotate: 0, scale: 1 }}
                   transition={{ duration: 0.4 }}
                 >
                   <Bug
-                    className={`w-4 h-4 ${isLight ? 'text-amber-600' : 'text-yellow-400'}`}
+                    className="w-4 h-4 text-amber-600 dark:text-yellow-400"
                   />
                 </motion.div>
                 <span
-                  className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border-2 ${
-                    isLight ? 'bg-sky-400 border-amber-50' : 'bg-slate-600 border-slate-900'
-                  }`}
+                  className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border-2 bg-sky-400 dark:bg-slate-600 border-amber-50 dark:border-slate-900"
                 />
               </button>
 
               <button
-                className={`p-2 ${isLight ? 'text-slate-700' : 'text-white'}`}
+                className="p-2 text-slate-700 dark:text-white"
                 onClick={() => setMobileOpen(!mobileOpen)}
                 aria-label="Toggle menu"
               >
@@ -238,9 +208,7 @@ export function Navbar() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className={`fixed inset-0 z-40 backdrop-blur-xl pt-20 px-6 md:hidden ${
-              isLight ? 'bg-white/95' : 'bg-black/95'
-            }`}
+            className="fixed inset-0 z-40 backdrop-blur-xl pt-20 px-6 md:hidden bg-white/95 dark:bg-black/95"
           >
             <div className="flex flex-col gap-2">
               {navItems.map((item) => {
@@ -252,9 +220,7 @@ export function Navbar() {
                     className={`px-4 py-3 text-lg rounded-lg transition-colors ${
                       active
                         ? 'text-yellow-500 bg-yellow-500/10'
-                        : isLight
-                        ? 'text-slate-500 hover:text-slate-800'
-                        : 'text-neutral-400 hover:text-white'
+                        : 'text-slate-500 dark:text-neutral-400 hover:text-slate-800 dark:hover:text-white'
                     }`}
                   >
                     {item.label}

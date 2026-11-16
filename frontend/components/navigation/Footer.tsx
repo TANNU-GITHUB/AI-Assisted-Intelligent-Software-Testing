@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { Bug } from 'lucide-react';
-import { useTheme } from './ThemeProvider';
 
 const links = {
   Product: [
@@ -24,28 +23,19 @@ const links = {
 };
 
 export function Footer() {
-  const { theme } = useTheme();
-  const isLight = theme === 'light';
-
   return (
-    <footer
-      className={`relative border-t transition-colors duration-300 ${
-        isLight
-          ? 'border-slate-200 bg-slate-50'
-          : 'border-neutral-900 bg-black'
-      }`}
-    >
+    <footer className="relative border-t border-border bg-background text-foreground transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-20 py-16">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
           {/* Logo */}
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center gap-2 mb-4">
               <Bug className="w-5 h-5 text-yellow-500" />
-              <span className={`font-mono text-sm font-bold tracking-wider ${isLight ? 'text-slate-800' : 'text-white'}`}>
+              <span className="font-mono text-sm font-bold tracking-wider text-foreground">
                 BUG<span className="text-yellow-500">/</span>AI
               </span>
             </Link>
-            <p className={`text-sm max-w-xs ${isLight ? 'text-slate-500' : 'text-neutral-500'}`}>
+            <p className="text-sm max-w-xs text-muted-foreground">
               AI-assisted intelligent software testing. Find bugs before your users do.
             </p>
           </div>
@@ -61,9 +51,7 @@ export function Footer() {
                   <li key={item.label}>
                     <Link
                       href={item.href}
-                      className={`text-sm transition-colors hover:text-yellow-500 ${
-                        isLight ? 'text-slate-500' : 'text-neutral-400'
-                      }`}
+                      className="text-sm text-muted-foreground transition-colors hover:text-yellow-500"
                     >
                       {item.label}
                     </Link>
@@ -74,17 +62,13 @@ export function Footer() {
           ))}
         </div>
 
-        <div
-          className={`mt-12 pt-8 border-t flex flex-col sm:flex-row items-center justify-between gap-4 ${
-            isLight ? 'border-slate-200' : 'border-neutral-900'
-          }`}
-        >
-          <p className={`text-xs font-mono ${isLight ? 'text-slate-400' : 'text-neutral-600'}`}>
+        <div className="mt-12 pt-8 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-xs font-mono text-muted-foreground">
             BUG/AI — FRONTEND DEMO — NO REAL AI BACKEND
           </p>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-            <span className={`text-xs font-mono ${isLight ? 'text-slate-400' : 'text-neutral-500'}`}>
+            <span className="text-xs font-mono text-muted-foreground">
               SYSTEM ONLINE
             </span>
           </div>

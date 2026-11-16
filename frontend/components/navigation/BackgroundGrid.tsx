@@ -122,9 +122,7 @@ export function BackgroundGrid() {
   return (
     <canvas
       ref={canvasRef}
-      className={`fixed inset-0 -z-10 pointer-events-none transition-all duration-500 ${
-        theme === 'light' ? 'bg-[#f5f0e8]' : 'bg-[#080808]'
-      }`}
+      className="fixed inset-0 -z-10 pointer-events-none transition-all duration-500 bg-background"
     />
   );
 }

@@ -147,20 +147,20 @@ export function GitHubPicker({
   const crumbs = path ? path.split('/').filter(Boolean) : [];
 
   return (
-    <div className="max-w-7xl mx-auto mb-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+    <div className="max-w-7xl mx-auto mb-4 rounded-2xl border border-border bg-card text-card-foreground p-4">
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <Github className="w-4 h-4 text-yellow-500" />
-        <span className="font-mono text-xs text-neutral-400 tracking-wider">GITHUB REPOS</span>
+        <span className="font-mono text-xs text-muted-foreground tracking-wider">GITHUB REPOS</span>
         {status?.connected ? (
           <>
-            <span className="text-xs text-neutral-300">
+            <span className="text-xs text-foreground">
               Connected as <span className="text-yellow-500">{status.login}</span>
             </span>
             <button
               type="button"
               onClick={disconnect}
               disabled={disabled}
-              className="ml-auto flex items-center gap-1 text-xs text-neutral-500 hover:text-white"
+              className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
               <Unplug className="w-3 h-3" />
               Disconnect
@@ -181,7 +181,7 @@ export function GitHubPicker({
       {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
 
       {!status?.connected && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-muted-foreground">
           Grant access to your GitHub repositories, then test the whole repo with the project agent,
           or pick a single Python file to load into Live Lab.
         </p>
@@ -189,9 +189,9 @@ export function GitHubPicker({
 
       {status?.connected && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-xl border border-neutral-800 p-3 max-h-56 overflow-auto">
+          <div className="rounded-xl border border-border p-3 max-h-56 overflow-auto">
             {loadingRepos ? (
-              <div className="flex items-center gap-2 text-xs text-neutral-500">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" /> Loading repositories…
               </div>
             ) : (
@@ -210,29 +210,29 @@ export function GitHubPicker({
                       className={`w-full text-left px-2 py-1.5 rounded-lg text-xs ${
                         selected?.id === repo.id
                           ? 'bg-yellow-500/15 text-yellow-500'
-                          : 'text-neutral-300 hover:bg-neutral-900'
+                          : 'text-foreground hover:bg-muted'
                       }`}
                     >
                       <span className="font-mono">{repo.full_name}</span>
                       {repo.private && (
-                        <span className="ml-2 text-[10px] text-neutral-500">private</span>
+                        <span className="ml-2 text-[10px] text-muted-foreground">private</span>
                       )}
                     </button>
                   </li>
                 ))}
                 {repos.length === 0 && (
-                  <li className="text-xs text-neutral-500">No repositories returned.</li>
+                  <li className="text-xs text-muted-foreground">No repositories returned.</li>
                 )}
               </ul>
             )}
           </div>
 
-          <div className="rounded-xl border border-neutral-800 p-3 max-h-56 overflow-auto">
+          <div className="rounded-xl border border-border p-3 max-h-56 overflow-auto">
             {!selected ? (
-              <p className="text-xs text-neutral-500">Select a repository to browse files.</p>
+              <p className="text-xs text-muted-foreground">Select a repository to browse files.</p>
             ) : (
               <>
-                <div className="flex flex-wrap gap-1 mb-2 text-[11px] font-mono text-neutral-500">
+                <div className="flex flex-wrap gap-1 mb-2 text-[11px] font-mono text-muted-foreground">
                   <button type="button" onClick={() => setPath('')} className="hover:text-yellow-500">
                     {selected.full_name}
                   </button>
@@ -257,7 +257,7 @@ export function GitHubPicker({
                     <li>
                       <button
                         type="button"
-                        className="text-xs text-neutral-400 hover:text-white"
+                        className="text-xs text-muted-foreground hover:text-foreground"
                         onClick={() => setPath(path.split('/').slice(0, -1).join('/'))}
                       >
                         ..
@@ -280,7 +280,7 @@ export function GitHubPicker({
                           <button
                             type="button"
                             onClick={() => setPath(entry.path)}
-                            className="flex items-center gap-2 w-full text-left text-xs text-neutral-300 hover:text-white"
+                            className="flex items-center gap-2 w-full text-left text-xs text-foreground hover:text-yellow-500"
                           >
                             <Folder className="w-3 h-3 text-yellow-500" />
                             {entry.name}
@@ -295,7 +295,7 @@ export function GitHubPicker({
                             className={`flex items-center gap-2 w-full text-left text-xs ${
                               sourcePath === entry.path || reqPath === entry.path
                                 ? 'text-yellow-500'
-                                : 'text-neutral-300 hover:text-white'
+                                : 'text-foreground hover:text-yellow-500'
                             }`}
                           >
                             {kind === 'source' ? (
@@ -324,7 +324,7 @@ export function GitHubPicker({
 
       {status?.connected && (
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <p className="text-[11px] text-neutral-500">
+          <p className="text-[11px] text-muted-foreground">
             Source: {sourcePath || 'pick a .py file'} · Requirements: {reqPath || 'optional .txt/.md'}
           </p>
           <button

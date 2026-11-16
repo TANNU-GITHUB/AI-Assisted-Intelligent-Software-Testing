@@ -37,8 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // Start with 'dark' class; ThemeProvider will update it client-side
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${inter.variable} ${jetbrains.variable} font-sans antialiased`}
       >

@@ -226,7 +226,7 @@ export default function LiveLabPage() {
         <div className="max-w-7xl mx-auto mb-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white">
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
                 AI Testing Lab
               </h1>
 
@@ -242,7 +242,7 @@ export default function LiveLabPage() {
                     ? 'bg-green-500'
                     : backendUp === false
                     ? 'bg-red-500'
-                    : 'bg-neutral-600'
+                    : 'bg-muted-foreground'
                 }`}
               />
               <span className="font-mono text-xs text-yellow-500">
@@ -284,11 +284,11 @@ export default function LiveLabPage() {
         />
 
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800 bg-neutral-900/50">
+          <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted">
               <Code2 className="w-4 h-4 text-yellow-500" />
-              <span className="font-mono text-xs text-neutral-400 tracking-wider">SOURCE CODE</span>
-              <span className="ml-auto text-xs text-neutral-600 font-mono">{filename}</span>
+              <span className="font-mono text-xs text-muted-foreground tracking-wider">SOURCE CODE</span>
+              <span className="ml-auto text-xs text-muted-foreground font-mono">{filename}</span>
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
@@ -314,29 +314,29 @@ export default function LiveLabPage() {
               onChange={(e) => setSourceCode(e.target.value)}
               disabled={phase === 'running'}
               spellCheck={false}
-              className="w-full h-[400px] p-4 bg-transparent font-mono text-xs text-neutral-300 leading-relaxed resize-none outline-none scrollbar-hide"
+              className="w-full h-[400px] p-4 bg-transparent font-mono text-xs text-foreground leading-relaxed resize-none outline-none scrollbar-hide"
             />
           </div>
 
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800 bg-neutral-900/50">
+          <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted">
               <FileText className="w-4 h-4 text-yellow-500" />
-              <span className="font-mono text-xs text-neutral-400 tracking-wider">REQUIREMENTS</span>
-              <span className="ml-auto text-xs text-neutral-600 font-mono">requirements.txt</span>
+              <span className="font-mono text-xs text-muted-foreground tracking-wider">REQUIREMENTS</span>
+              <span className="ml-auto text-xs text-muted-foreground font-mono">requirements.txt</span>
             </div>
             <textarea
               value={requirements}
               onChange={(e) => setRequirements(e.target.value)}
               disabled={phase === 'running'}
               spellCheck={false}
-              className="w-full h-[400px] p-4 bg-transparent font-mono text-xs text-neutral-300 leading-relaxed resize-none outline-none scrollbar-hide"
+              className="w-full h-[400px] p-4 bg-transparent font-mono text-xs text-foreground leading-relaxed resize-none outline-none scrollbar-hide"
             />
           </div>
 
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800 bg-neutral-900/50">
+          <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted">
               <Cpu className="w-4 h-4 text-yellow-500" />
-              <span className="font-mono text-xs text-neutral-400 tracking-wider">AI ENGINE</span>
+              <span className="font-mono text-xs text-muted-foreground tracking-wider">AI ENGINE</span>
             </div>
             <div className="relative h-[400px]">
               {show3D && (
@@ -344,7 +344,7 @@ export default function LiveLabPage() {
                   <TestingLabScene scrollProgress={phase === 'running' ? 0.5 : 0} />
                 </div>
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
               {phase === 'running' && (
                 <div className="absolute bottom-4 left-4 right-4">
                   <div className="flex items-center gap-2 mb-2">
@@ -357,7 +357,7 @@ export default function LiveLabPage() {
                       {analysisStages[Math.min(stageIndex, analysisStages.length - 1)].label}
                     </span>
                   </div>
-                  <div className="h-1 bg-neutral-800 rounded-full overflow-hidden">
+                  <div className="h-1 bg-muted rounded-full overflow-hidden">
                     <motion.div
                       className="h-full bg-yellow-500"
                       animate={{ width: `${((stageIndex + 1) / analysisStages.length) * 100}%` }}
@@ -405,8 +405,8 @@ export default function LiveLabPage() {
         {session?.github_agent && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">GitHub project agent</h3>
-              <span className="text-sm text-neutral-400">
+              <h3 className="text-lg font-bold text-foreground">GitHub project agent</h3>
+              <span className="text-sm text-muted-foreground">
                 {session.github_agent.full_name} · {session.github_agent.python_files_tested?.length || 0} modules
               </span>
             </div>
@@ -417,12 +417,12 @@ export default function LiveLabPage() {
                   className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5"
                 >
                   <p className="font-mono text-xs text-yellow-500 mb-2">{mod.path}</p>
-                  <p className="text-sm text-white">{mod.functions.length} functions tested</p>
+                  <p className="text-sm text-foreground">{mod.functions.length} functions tested</p>
                 </div>
               ))}
             </div>
             {(session.github_agent.skipped_modules?.length || 0) > 0 && (
-              <p className="mt-3 text-xs text-neutral-500">
+              <p className="mt-3 text-xs text-muted-foreground">
                 Skipped {session.github_agent.skipped_modules?.length} paths (tests, syntax errors, or no top-level functions).
               </p>
             )}
@@ -432,7 +432,7 @@ export default function LiveLabPage() {
         {functions.length > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Source Code Analysis</h3>
+              <h3 className="text-lg font-bold text-foreground">Source Code Analysis</h3>
               <span className="flex items-center gap-1.5 text-green-500 text-sm">
                 <CheckCircle2 className="w-4 h-4" />
                 {functions.length} functions
@@ -453,10 +453,10 @@ export default function LiveLabPage() {
                         CC {fn.cyclomatic_complexity}
                       </span>
                     </div>
-                    <p className="text-sm text-white mb-2">
+                    <p className="text-sm text-foreground mb-2">
                       {fn.params.map((p) => p.name).join(', ') || 'no params'}
                     </p>
-                    <div className="flex items-center gap-2 text-xs text-neutral-500">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="font-mono">lines {fn.lineno}–{fn.end_lineno}</span>
                       <span>•</span>
                       <span>{fn.branch_count} branches</span>
@@ -471,7 +471,7 @@ export default function LiveLabPage() {
         {structuredReqs.length > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Requirement Analysis</h3>
+              <h3 className="text-lg font-bold text-foreground">Requirement Analysis</h3>
               <span className="flex items-center gap-1.5 text-green-500 text-sm">
                 <CheckCircle2 className="w-4 h-4" />
                 {structuredReqs.length} testable rules
@@ -489,8 +489,8 @@ export default function LiveLabPage() {
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-mono text-xs text-yellow-500">{req.requirement_id}</span>
                     </div>
-                    <p className="text-sm text-white mb-2">{req.condition}</p>
-                    <p className="text-xs text-neutral-400">{req.expected_result}</p>
+                    <p className="text-sm text-foreground mb-2">{req.condition}</p>
+                    <p className="text-xs text-muted-foreground">{req.expected_result}</p>
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -500,7 +500,7 @@ export default function LiveLabPage() {
         {blackBoxTests > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Black-Box Tests (Task 6)</h3>
+              <h3 className="text-lg font-bold text-foreground">Black-Box Tests (Task 6)</h3>
               <span className="flex items-center gap-1.5 text-green-500 text-sm">
                 <CheckCircle2 className="w-4 h-4" />
                 {blackBoxTests} requirement-driven cases
@@ -519,9 +519,9 @@ export default function LiveLabPage() {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-mono text-xs text-yellow-500">{req.requirement_id}</span>
-                    <span className="text-xs text-neutral-500">{req.case_count} cases</span>
+                    <span className="text-xs text-muted-foreground">{req.case_count} cases</span>
                   </div>
-                  <ul className="text-sm text-neutral-300 space-y-1">
+                  <ul className="text-sm text-foreground space-y-1">
                     {(req.cases || []).slice(0, 3).map((c) => (
                       <li key={c.case_id} className="truncate">{c.description}</li>
                     ))}
@@ -534,7 +534,7 @@ export default function LiveLabPage() {
         {whiteBoxTests > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">White-Box Tests (Task 5)</h3>
+              <h3 className="text-lg font-bold text-foreground">White-Box Tests (Task 5)</h3>
               <span className="flex items-center gap-1.5 text-green-500 text-sm">
                 <CheckCircle2 className="w-4 h-4" />
                 {whiteBoxTests} generated cases
@@ -548,13 +548,13 @@ export default function LiveLabPage() {
                     key={fn.function}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="p-4 rounded-xl border border-neutral-800 bg-neutral-900/50"
+                    className="p-4 rounded-xl border border-border bg-muted"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-mono text-xs text-yellow-500">{fn.function}</span>
-                      <span className="text-xs text-neutral-500">{fn.source}</span>
+                      <span className="text-xs text-muted-foreground">{fn.source}</span>
                     </div>
-                    <p className="text-sm text-white">{fn.case_count} pytest cases</p>
+                    <p className="text-sm text-foreground">{fn.case_count} pytest cases</p>
                   </motion.div>
                 ))}
             </div>
@@ -564,7 +564,7 @@ export default function LiveLabPage() {
         {failedTests.length > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Failed tests — fix your code</h3>
+              <h3 className="text-lg font-bold text-foreground">Failed tests — fix your code</h3>
               <span className="flex items-center gap-1.5 text-red-400 text-sm">
                 <XCircle className="w-4 h-4" />
                 {failedTests.length} failed
@@ -583,16 +583,16 @@ export default function LiveLabPage() {
                       {test.requirement_condition ? ` — ${test.requirement_condition}` : ''}
                     </p>
                   )}
-                  <p className="text-sm text-white mb-2">{test.why_failed || 'This test failed.'}</p>
+                  <p className="text-sm text-foreground mb-2">{test.why_failed || 'This test failed.'}</p>
                   {test.expected_value && (
-                    <p className="text-xs text-neutral-400 mb-1">
+                    <p className="text-xs text-muted-foreground mb-1">
                       Expected {test.expected_value}
                       {test.actual_value ? ` · got ${test.actual_value}` : ''}
                     </p>
                   )}
-                  <p className="text-sm text-neutral-300">{test.how_to_fix}</p>
+                  <p className="text-sm text-foreground">{test.how_to_fix}</p>
                   {test.error_message && (
-                    <pre className="mt-2 text-[11px] text-neutral-500 whitespace-pre-wrap max-h-40 overflow-auto">
+                    <pre className="mt-2 text-[11px] text-muted-foreground whitespace-pre-wrap max-h-40 overflow-auto">
                       {test.error_message}
                     </pre>
                   )}
@@ -605,8 +605,8 @@ export default function LiveLabPage() {
         {reqCoverage && (reqCoverage.requirements?.length || 0) > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Requirement coverage</h3>
-              <span className="text-sm text-neutral-400">
+              <h3 className="text-lg font-bold text-foreground">Requirement coverage</h3>
+              <span className="text-sm text-muted-foreground">
                 {reqCoverage.tested_count}/{reqCoverage.requirement_count} requirements tested
                 {reqCoverage.coverage_percent != null ? ` · ${reqCoverage.coverage_percent}%` : ''}
               </span>
@@ -620,14 +620,14 @@ export default function LiveLabPage() {
                       ? 'border-green-500/20 bg-green-500/5'
                       : row.status === 'failed'
                       ? 'border-red-500/30 bg-red-500/5'
-                      : 'border-neutral-800 bg-neutral-900/40'
+                      : 'border-border bg-muted'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-mono text-xs text-yellow-500">{row.requirement_id}</span>
-                    <span className="text-xs text-neutral-400">{row.status}</span>
+                    <span className="text-xs text-muted-foreground">{row.status}</span>
                   </div>
-                  <p className="text-sm text-white">{row.condition}</p>
+                  <p className="text-sm text-foreground">{row.condition}</p>
                 </div>
               ))}
             </div>
@@ -637,15 +637,15 @@ export default function LiveLabPage() {
         {(session?.coverage?.source_lines?.length || 0) > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Source line coverage</h3>
-              <span className="text-sm text-neutral-400">
+              <h3 className="text-lg font-bold text-foreground">Source line coverage</h3>
+              <span className="text-sm text-muted-foreground">
                 {session?.coverage?.overall_line_coverage_percent != null
                   ? `${session.coverage.overall_line_coverage_percent}% lines`
                   : ''}
                 {missedLines.length ? ` · ${missedLines.length} missed` : ' · all measured lines hit'}
               </span>
             </div>
-            <pre className="p-4 rounded-xl border border-neutral-800 bg-neutral-950 overflow-auto max-h-96 font-mono text-xs leading-5">
+            <pre className="p-4 rounded-xl border border-border bg-card text-card-foreground overflow-auto max-h-96 font-mono text-xs leading-5">
               {(session?.coverage?.source_lines || []).map((line) => (
                 <div
                   key={line.lineno}
@@ -654,10 +654,10 @@ export default function LiveLabPage() {
                       ? 'text-red-400 bg-red-500/10'
                       : line.status === 'covered'
                       ? 'text-green-500/80'
-                      : 'text-neutral-600'
+                      : 'text-muted-foreground'
                   }
                 >
-                  <span className="inline-block w-10 text-neutral-600">{line.lineno}</span>
+                  <span className="inline-block w-10 text-muted-foreground">{line.lineno}</span>
                   {line.status === 'missed' ? '✗ ' : '  '}
                   {line.text}
                 </div>
