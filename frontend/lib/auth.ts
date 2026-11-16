@@ -59,7 +59,7 @@ export function handleUnauthorizedResponse(res: Response, hasAuthorization: bool
   if (res.status !== 401 || !hasAuthorization) return;
   clearAccessToken();
   if (typeof window !== 'undefined') {
-    window.location.href = '/auth/login?reason=session_expired';
+    window.location.href = '/login?reason=session_expired';
   }
   throw new Error('Session expired. Please sign in again.');
 }
