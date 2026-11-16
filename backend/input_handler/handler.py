@@ -3,16 +3,29 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 import difflib
+from contextvars import ContextVar
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
+from typing import Callable, Concatenate, ParamSpec, TypeVar
+
+from filelock import FileLock
 
 from config import SCHEMA_VERSION, SESSIONS_DIR
 
 
 class InputValidationError(ValueError):
     """Raised when uploaded source code or requirements fail validation."""
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
+_ACTIVE_SESSION_LOCKS: ContextVar[dict[str, FileLock]] = ContextVar(
+    "active_session_locks", default={}
+)
 
 
 def _utc_now() -> str:
@@ -31,11 +44,39 @@ def session_manifest_path(session_id: str) -> Path:
     return session_dir(session_id) / "session.json"
 
 
+def _session_lock(session_id: str) -> FileLock:
+    active_locks = _ACTIVE_SESSION_LOCKS.get()
+    return active_locks.get(session_id) or FileLock(
+        str(session_manifest_path(session_id)) + ".lock"
+    )
+
+
+def session_locked(
+    function: Callable[Concatenate[str, P], R],
+) -> Callable[Concatenate[str, P], R]:
+    @wraps(function)
+    def wrapper(session_id: str, *args: P.args, **kwargs: P.kwargs) -> R:
+        active_locks = _ACTIVE_SESSION_LOCKS.get()
+        if session_id in active_locks:
+            return function(session_id, *args, **kwargs)
+
+        lock = _session_lock(session_id)
+        with lock:
+            token = _ACTIVE_SESSION_LOCKS.set({**active_locks, session_id: lock})
+            try:
+                return function(session_id, *args, **kwargs)
+            finally:
+                _ACTIVE_SESSION_LOCKS.reset(token)
+
+    return wrapper
+
+
 def load_session(session_id: str) -> dict:
     path = session_manifest_path(session_id)
     if not path.is_file():
         raise FileNotFoundError(f"Unknown session_id: {session_id}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    with _session_lock(session_id):
+        return json.loads(path.read_text(encoding="utf-8"))
 
 
 def session_with_files(session_id: str) -> dict:
@@ -56,7 +97,8 @@ def list_sessions(owner_user_id: str | None = None) -> list[dict]:
         manifest = folder / "session.json"
         if not manifest.is_file():
             continue
-        data = json.loads(manifest.read_text(encoding="utf-8"))
+        with _session_lock(folder.name):
+            data = json.loads(manifest.read_text(encoding="utf-8"))
         if owner_user_id and data.get("owner_user_id") != owner_user_id:
             continue
         items.append(
@@ -80,10 +122,12 @@ def save_session(payload: dict) -> dict:
     payload["updated_at"] = _utc_now()
     folder = session_dir(session_id)
     folder.mkdir(parents=True, exist_ok=True)
-    session_manifest_path(session_id).write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    path = session_manifest_path(session_id)
+    data = json.dumps(payload, indent=2, ensure_ascii=False)
+    with _session_lock(session_id):
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        temp_path.write_text(data, encoding="utf-8")
+        os.replace(temp_path, path)
     return payload
 
 
@@ -146,6 +190,7 @@ def create_session(
     return save_session(payload)
 
 
+@session_locked
 def update_session_source(session_id: str, source_code: str) -> dict:
     payload = load_session(session_id)
     original_filename = (payload.get("inputs") or {}).get("original_filename", "source.py")

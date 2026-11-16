@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from config import NVIDIA_API_KEY, NVIDIA_MODEL
 from llm_client import generate_text, llm_is_configured
-from input_handler.handler import load_session, save_session, session_dir
+from input_handler.handler import load_session, save_session, session_dir, session_locked
 from input_handler.session_logging import log_session_error
 from test_generation.prompts_white_box import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
 from test_generation.safe_codegen import (
@@ -300,6 +300,7 @@ def _write_pytest_file(
     return str(out_file)
 
 
+@session_locked
 def analyze_session_white_box(session_id: str) -> dict:
     payload = load_session(session_id)
     folder = session_dir(session_id)

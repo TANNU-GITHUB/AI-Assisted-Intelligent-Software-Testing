@@ -8,7 +8,7 @@ from typing import Any
 
 from config import NVIDIA_API_KEY, NVIDIA_MODEL
 from llm_client import generate_text
-from input_handler.handler import load_session, save_session, session_dir
+from input_handler.handler import load_session, save_session, session_dir, session_locked
 from requirement_analysis.prompts import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
 
 
@@ -148,6 +148,7 @@ def analyze_requirements(
     return result
 
 
+@session_locked
 def analyze_session_requirements(session_id: str) -> dict[str, Any]:
     payload = load_session(session_id)
     requirements_path = session_dir(session_id) / "requirements.txt"

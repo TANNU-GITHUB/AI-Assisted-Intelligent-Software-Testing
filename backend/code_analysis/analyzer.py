@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from typing import Any
 
-from input_handler.handler import load_session, save_session, session_dir
+from input_handler.handler import load_session, save_session, session_dir, session_locked
 
 
 class CodeAnalysisError(ValueError):
@@ -214,6 +214,7 @@ def analyze_source(source_code: str) -> dict[str, Any]:
     }
 
 
+@session_locked
 def analyze_session(session_id: str) -> dict[str, Any]:
     payload = load_session(session_id)
     source_path = session_dir(session_id) / "source.py"

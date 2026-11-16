@@ -26,7 +26,7 @@ from execution.diagnostics import (
     collected_requirement_ids,
     enrich_test_result,
 )
-from input_handler.handler import load_session, save_session, session_dir
+from input_handler.handler import load_session, save_session, session_dir, session_locked
 from input_handler.session_logging import log_session_error
 
 
@@ -199,6 +199,7 @@ def _run_pytest(folder, targets: list[str], report_path) -> dict:
 # ---------------------------------------------------------------------------
 # Task 8 — Test Execution Engine
 # ---------------------------------------------------------------------------
+@session_locked
 def analyze_session_execution(session_id: str) -> dict:
     payload = load_session(session_id)
     folder = session_dir(session_id)
@@ -343,6 +344,7 @@ def _function_coverage(code_analysis: dict, executed_lines: set[int], missing_br
     return function_results
 
 
+@session_locked
 def analyze_session_coverage(session_id: str) -> dict:
     """
     Re-runs the test suite under coverage.py (with branch tracking),

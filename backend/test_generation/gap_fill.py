@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from typing import Any
 
-from input_handler.handler import load_session, save_session, session_dir
+from input_handler.handler import load_session, save_session, session_dir, session_locked
 from test_generation.black_box import _fallback_cases as _black_box_fallback
 from test_generation.safe_codegen import (
     expected_exception_expression,
@@ -62,6 +62,7 @@ def _write_gap_pytest(session_id: str, cases: list[dict[str, Any]]) -> str:
     return str(out_file)
 
 
+@session_locked
 def analyze_session_gap_fill(session_id: str) -> dict:
     payload = load_session(session_id)
     folder = session_dir(session_id)

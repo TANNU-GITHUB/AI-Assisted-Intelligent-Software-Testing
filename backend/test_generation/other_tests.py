@@ -16,7 +16,7 @@ from pathlib import Path
 
 from config import NVIDIA_API_KEY, NVIDIA_MODEL
 from llm_client import generate_text, llm_is_configured
-from input_handler.handler import load_session, save_session, session_dir
+from input_handler.handler import load_session, save_session, session_dir, session_locked
 from input_handler.session_logging import log_session_error
 from test_generation.safe_codegen import (
     expected_exception_expression,
@@ -362,6 +362,7 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
 # ---------------------------------------------------------------------------
 # Orchestrator — mirrors analyze_session() / analyze_session_requirements()
 # ---------------------------------------------------------------------------
+@session_locked
 def analyze_session_other_tests(session_id: str) -> dict:
     payload = load_session(session_id)
     folder = session_dir(session_id)
