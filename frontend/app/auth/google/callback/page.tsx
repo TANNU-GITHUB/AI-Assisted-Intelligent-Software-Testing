@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { completeGoogleOAuth } from '@/lib/auth';
+import { consumeOAuthState } from '@/lib/oauth-state';
 import Link from 'next/link';
 
 export default function GoogleCallbackPage() {
@@ -14,18 +15,16 @@ export default function GoogleCallbackPage() {
   useEffect(() => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
-    const stored = sessionStorage.getItem('bugai_oauth_state');
 
     if (!code || !state) {
       setError('Missing authorization code from Google.');
       return;
     }
+    const stored = consumeOAuthState('google');
     if (!stored || stored !== state) {
       setError('Invalid OAuth state. Please try signing in again.');
       return;
     }
-
-    sessionStorage.removeItem('bugai_oauth_state');
 
     completeGoogleOAuth(code, state)
       .then(() => router.replace('/live-lab'))

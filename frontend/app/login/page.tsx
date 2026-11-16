@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { getGoogleAuthUrl, loginUser, registerUser } from '@/lib/auth';
+import { saveOAuthState } from '@/lib/oauth-state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -46,7 +47,7 @@ export default function LoginPage() {
     setGoogleLoading(true);
     try {
       const { url, state } = await getGoogleAuthUrl();
-      sessionStorage.setItem('bugai_oauth_state', state);
+      saveOAuthState('google', state);
       window.location.href = url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google sign-in is not configured.');

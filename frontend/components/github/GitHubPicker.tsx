@@ -17,6 +17,7 @@ import {
   type GitHubRepo,
   type SessionPayload,
 } from '@/lib/api';
+import { saveOAuthState } from '@/lib/oauth-state';
 
 type Props = {
   disabled?: boolean;
@@ -77,7 +78,7 @@ export function GitHubPicker({
     setConnecting(true);
     try {
       const { url, state } = await getGitHubAuthUrl();
-      sessionStorage.setItem('bugai_github_oauth_state', state);
+      saveOAuthState('github', state);
       window.location.href = url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'GitHub is not configured.');

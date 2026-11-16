@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { completeGitHubOAuth } from '@/lib/auth';
+import { consumeOAuthState } from '@/lib/oauth-state';
 
 export default function GitHubCallbackPage() {
   const router = useRouter();
@@ -14,18 +15,16 @@ export default function GitHubCallbackPage() {
   useEffect(() => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
-    const stored = sessionStorage.getItem('bugai_github_oauth_state');
 
     if (!code || !state) {
       setError('Missing authorization code from GitHub.');
       return;
     }
+    const stored = consumeOAuthState('github');
     if (!stored || stored !== state) {
       setError('Invalid OAuth state. Sign in and connect GitHub again.');
       return;
     }
-
-    sessionStorage.removeItem('bugai_github_oauth_state');
 
     completeGitHubOAuth(code, state)
       .then(() => router.replace('/live-lab'))
