@@ -86,6 +86,7 @@ export default function LiveLabPage() {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionPayload | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const runningRef = useRef(false);
 
   useEffect(() => {
     setShow3D(true);
@@ -112,12 +113,14 @@ export default function LiveLabPage() {
   };
 
   const runAnalysis = async () => {
-    setError(null);
-    setSession(null);
-    setPhase('running');
-    setStageIndex(0);
+    if (runningRef.current) return;
+    runningRef.current = true;
     let latest: SessionPayload | null = null;
     try {
+      setError(null);
+      setSession(null);
+      setPhase('running');
+      setStageIndex(0);
       const created = await createSession(sourceCode, requirements, filename);
       latest = created;
       persistSessionId(created.session_id);
@@ -194,6 +197,8 @@ export default function LiveLabPage() {
       } else {
         setPhase('idle');
       }
+    } finally {
+      runningRef.current = false;
     }
   };
 
