@@ -229,22 +229,19 @@ def _fallback_cases(
     public_api: list[dict[str, Any]],
     source_code: str,
 ) -> list[dict[str, Any]]:
-    namespace: dict[str, Any] = {}
-    try:
-        exec(compile(source_code, "<source>", "exec"), namespace)
-    except Exception:
-        namespace = {}
-
+    tree = ast.parse(source_code)
+    defined_functions = {
+        node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+    }
     name_to_params = {entry["name"]: entry.get("params") or [] for entry in public_api}
     cases: list[dict[str, Any]] = []
 
     for index, requirement in enumerate(structured_requirements):
         function_name = _pick_function_for_requirement(requirement, public_api, index)
-        if not function_name:
+        if not function_name or function_name not in defined_functions:
             continue
         params = name_to_params.get(function_name, [])
         inputs = _inputs_from_condition(requirement["condition"], params)
-        target = namespace.get(function_name)
         condition_lower = requirement["condition"].lower()
         expected_exception = None
         if "error" in condition_lower or "reject" in condition_lower:
@@ -264,26 +261,6 @@ def _fallback_cases(
             )
             continue
 
-        expected_output: Any = None
-        if callable(target):
-            try:
-                expected_output = target(**inputs)
-            except Exception as exc:
-                cases.append(
-                    {
-                        "case_id": f"bb-req-{index + 1}",
-                        "description": requirement["condition"],
-                        "requirement_id": requirement["requirement_id"],
-                        "function_name": function_name,
-                        "input": inputs,
-                        "expected_output": None,
-                        "expected_exception": type(exc).__name__,
-                        "test_type": "black_box",
-                        "source": "heuristic-fallback",
-                    }
-                )
-                continue
-
         cases.append(
             {
                 "case_id": f"bb-req-{index + 1}",
@@ -291,10 +268,11 @@ def _fallback_cases(
                 "requirement_id": requirement["requirement_id"],
                 "function_name": function_name,
                 "input": inputs,
-                "expected_output": expected_output,
+                "expected_output": None,
                 "expected_exception": None,
                 "test_type": "black_box",
                 "source": "heuristic-fallback",
+                "assert_output": False,
             }
         )
 
@@ -328,7 +306,11 @@ def _write_pytest_file(session_id: str, cases: list[dict[str, Any]]) -> str:
             f"@pytest.mark.parametrize('_requirement_id', [{req_id!r}], ids=[{req_id!r}])"
         )
         lines.append(f"def {test_name}(_requirement_id):")
-        if case.get("expected_exception"):
+        if not case.get("assert_output", True):
+            lines.append(
+                '    pytest.skip("Static fallback cannot determine the expected output.")'
+            )
+        elif case.get("expected_exception"):
             lines.append(f"    with pytest.raises({case['expected_exception']}):")
             lines.append(f"        {function_name}(**{inputs!r})")
         else:

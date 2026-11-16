@@ -117,11 +117,6 @@ def _fallback_integration_tests(
     source_code: str, call_pairs: list[dict], requirement_ids: list[str]
 ) -> list[dict]:
     req = requirement_ids[0] if requirement_ids else "REQ-01"
-    namespace: dict = {}
-    try:
-        exec(compile(source_code, "<source>", "exec"), namespace)
-    except Exception:
-        namespace = {}
     cases: list[dict] = []
     tree = ast.parse(source_code)
     functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
@@ -132,21 +127,15 @@ def _fallback_integration_tests(
             continue
         seen.add(caller)
         inputs = _default_inputs_for_function(functions[caller])
-        target = namespace.get(caller)
-        expected = None
-        if callable(target):
-            try:
-                expected = target(**inputs)
-            except Exception:
-                continue
         cases.append(
             {
                 "caller": caller,
                 "callee": pair.get("callee"),
                 "input": inputs,
-                "expected_output": expected,
+                "expected_output": None,
                 "test_type": "integration",
                 "requirement_id": req,
+                "assert_output": False,
             }
         )
     return cases
@@ -315,6 +304,11 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
             lines.append(f"def {test_name}(_requirement_id):")
             lines.append(f"    with pytest.raises({expected_exc}):")
             lines.append(f"        {func_name}(**{input_kwargs!r})")
+        elif not case.get("assert_output", True):
+            lines.append(f"def {test_name}(_requirement_id):")
+            lines.append(
+                '    pytest.skip("Static fallback cannot determine the expected output.")'
+            )
         else:
             expected = case.get("expected_output")
             lines.append(f"def {test_name}(_requirement_id):")

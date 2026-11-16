@@ -137,11 +137,12 @@ def build_requirement_coverage(
             continue
         linked = [t for t in tests if t.get("requirement_id") == req_id]
         failed = [t for t in linked if t.get("status") in {"failed", "error"}]
+        completed = [t for t in linked if t.get("status") != "skipped"]
         if failed:
             status = "failed"
-        elif linked:
+        elif completed:
             status = "passed"
-        elif req_id in generated_ids:
+        elif not linked and req_id in generated_ids:
             status = "generated_not_run"
         else:
             status = "untested"

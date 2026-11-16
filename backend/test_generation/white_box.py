@@ -133,37 +133,27 @@ def _fallback_cases(
     cases: list[dict[str, Any]] = []
 
     tree = ast.parse(module_source)
-    fn_node = None
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == name:
-            fn_node = node
-            break
-    if fn_node is None:
+    if not any(
+        isinstance(node, ast.FunctionDef) and node.name == name
+        for node in ast.walk(tree)
+    ):
         raise WhiteBoxError(f"Could not locate function {name} for fallback generation.")
-
-    namespace: dict[str, Any] = {}
-    exec(compile(ast.Module(body=list(tree.body), type_ignores=[]), "<module>", "exec"), namespace)
-    target = namespace.get(name)
-    if not callable(target):
-        raise WhiteBoxError(f"Function {name} is not callable in fallback namespace.")
 
     def add_case(
         case_id: str,
         description: str,
         inputs: dict[str, Any],
-        *,
-        expected_output: Any = None,
-        expected_exception: str | None = None,
     ) -> None:
         cases.append(
             {
                 "case_id": case_id,
                 "description": description,
                 "input": inputs,
-                "expected_output": expected_output,
-                "expected_exception": expected_exception,
+                "expected_output": None,
+                "expected_exception": None,
                 "test_type": "white_box",
                 "function_name": name,
+                "assert_output": False,
             }
         )
 
@@ -184,16 +174,7 @@ def _fallback_cases(
                 smoke_input[param["name"]] = 0.0
             else:
                 smoke_input[param["name"]] = 0
-        try:
-            result = target(**smoke_input)
-            add_case("smoke", "default smoke test", smoke_input, expected_output=result)
-        except Exception as exc:
-            add_case(
-                "smoke",
-                "default smoke test raises",
-                smoke_input,
-                expected_exception=type(exc).__name__,
-            )
+        add_case("smoke", "default smoke test", smoke_input)
         return cases
 
     bool_params = [p for p in param_names if p.startswith("is_") or p.endswith("_flag")]
@@ -225,36 +206,17 @@ def _fallback_cases(
             for param in bool_params:
                 inputs[param] = param in condition and "not " not in condition
 
-        try:
-            result = target(**inputs)
-            add_case(
-                f"branch{branch_index}",
-                f"covers branch at line {branch.get('lineno')}",
-                inputs,
-                expected_output=result,
-            )
-        except Exception as exc:
-            add_case(
-                f"branch{branch_index}",
-                f"covers branch at line {branch.get('lineno')}",
-                inputs,
-                expected_exception=type(exc).__name__,
-            )
+        add_case(
+            f"branch{branch_index}",
+            f"covers branch at line {branch.get('lineno')}",
+            inputs,
+        )
 
     if bool_params and len({json.dumps(c["input"], sort_keys=True) for c in cases}) < 2:
         alt = dict(cases[0]["input"]) if cases else {p: True for p in bool_params}
         for param in bool_params:
             alt[param] = not alt.get(param, True)
-        try:
-            result = target(**alt)
-            add_case("bool_flip", "alternate boolean branch", alt, expected_output=result)
-        except Exception as exc:
-            add_case(
-                "bool_flip",
-                "alternate boolean branch",
-                alt,
-                expected_exception=type(exc).__name__,
-            )
+        add_case("bool_flip", "alternate boolean branch", alt)
 
     if not cases:
         raise WhiteBoxError(f"Fallback generator produced no cases for {name}.")
@@ -299,7 +261,11 @@ def _write_pytest_file(
             f"@pytest.mark.parametrize('_requirement_id', [{req_id!r}], ids=[{req_id!r}])"
         )
         lines.append(f"def {test_name}(_requirement_id):")
-        if case.get("expected_exception"):
+        if not case.get("assert_output", True):
+            lines.append(
+                '    pytest.skip("Static fallback cannot determine the expected output.")'
+            )
+        elif case.get("expected_exception"):
             lines.append(f"    with pytest.raises({case['expected_exception']}):")
             lines.append(f"        {function_name}(**{inputs!r})")
         else:

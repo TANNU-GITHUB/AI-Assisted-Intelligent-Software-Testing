@@ -37,3 +37,26 @@ def test_requirement_coverage_marks_untested_and_failed():
     assert by_id["REQ-02"]["status"] == "failed"
     assert by_id["REQ-03"]["status"] == "untested"
     assert coverage["untested_count"] == 1
+
+
+def test_requirement_with_only_skipped_tests_is_untested():
+    coverage = build_requirement_coverage(
+        [{"requirement_id": "REQ-01", "condition": "returns a value"}],
+        [{"test_id": "t1", "requirement_id": "REQ-01", "status": "skipped"}],
+    )
+
+    assert coverage["requirements"][0]["status"] == "untested"
+    assert coverage["tested_count"] == 0
+    assert coverage["coverage_percent"] == 0
+
+
+def test_passed_test_counts_even_when_other_linked_test_is_skipped():
+    coverage = build_requirement_coverage(
+        [{"requirement_id": "REQ-01", "condition": "returns a value"}],
+        [
+            {"test_id": "t1", "requirement_id": "REQ-01", "status": "skipped"},
+            {"test_id": "t2", "requirement_id": "REQ-01", "status": "passed"},
+        ],
+    )
+
+    assert coverage["requirements"][0]["status"] == "passed"
