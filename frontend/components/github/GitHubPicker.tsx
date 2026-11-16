@@ -264,46 +264,57 @@ export function GitHubPicker({
                       </button>
                     </li>
                   )}
-                  {entries.map((entry) => (
-                    <li key={entry.path}>
-                      {entry.type === 'dir' ? (
-                        <button
-                          type="button"
-                          onClick={() => setPath(entry.path)}
-                          className="flex items-center gap-2 w-full text-left text-xs text-neutral-300 hover:text-white"
-                        >
-                          <Folder className="w-3 h-3 text-yellow-500" />
-                          {entry.name}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (entry.kind === 'source') setSourcePath(entry.path);
-                            else setReqPath(entry.path);
-                          }}
-                          className={`flex items-center gap-2 w-full text-left text-xs ${
-                            sourcePath === entry.path || reqPath === entry.path
-                              ? 'text-yellow-500'
-                              : 'text-neutral-300 hover:text-white'
-                          }`}
-                        >
-                          {entry.kind === 'source' ? (
-                            <FileCode2 className="w-3 h-3" />
-                          ) : (
-                            <FileText className="w-3 h-3" />
-                          )}
-                          {entry.name}
-                          {sourcePath === entry.path && (
-                            <span className="ml-auto text-[10px]">source</span>
-                          )}
-                          {reqPath === entry.path && (
-                            <span className="ml-auto text-[10px]">requirements</span>
-                          )}
-                        </button>
-                      )}
-                    </li>
-                  ))}
+                  {entries.map((entry) => {
+                    const extension = entry.path.split('.').pop()?.toLowerCase();
+                    const kind =
+                      entry.kind ??
+                      (extension === 'py'
+                        ? 'source'
+                        : extension === 'txt' || extension === 'md'
+                          ? 'requirements'
+                          : null);
+                    if (entry.type === 'file' && !kind) return null;
+                    return (
+                      <li key={entry.path}>
+                        {entry.type === 'dir' ? (
+                          <button
+                            type="button"
+                            onClick={() => setPath(entry.path)}
+                            className="flex items-center gap-2 w-full text-left text-xs text-neutral-300 hover:text-white"
+                          >
+                            <Folder className="w-3 h-3 text-yellow-500" />
+                            {entry.name}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (kind === 'source') setSourcePath(entry.path);
+                              else if (kind === 'requirements') setReqPath(entry.path);
+                            }}
+                            className={`flex items-center gap-2 w-full text-left text-xs ${
+                              sourcePath === entry.path || reqPath === entry.path
+                                ? 'text-yellow-500'
+                                : 'text-neutral-300 hover:text-white'
+                            }`}
+                          >
+                            {kind === 'source' ? (
+                              <FileCode2 className="w-3 h-3" />
+                            ) : (
+                              <FileText className="w-3 h-3" />
+                            )}
+                            {entry.name}
+                            {sourcePath === entry.path && (
+                              <span className="ml-auto text-[10px]">source</span>
+                            )}
+                            {reqPath === entry.path && (
+                              <span className="ml-auto text-[10px]">requirements</span>
+                            )}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </>
             )}
