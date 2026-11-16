@@ -368,7 +368,16 @@ def analyze_session_black_box(session_id: str) -> dict:
         )
 
     requirement_ids = {item["requirement_id"] for item in structured}
-    requirements_text = str(payload.get("requirements_text") or "").strip()
+    requirements_path = folder / "requirements.txt"
+    if not requirements_path.is_file():
+        raise BlackBoxError(
+            f"Requirements text file not found for session '{session_id}'."
+        )
+    requirements_text = requirements_path.read_text(encoding="utf-8").strip()
+    if not requirements_text:
+        raise BlackBoxError(
+            f"Requirements text file is empty for session '{session_id}'."
+        )
     source_code = source_path.read_text(encoding="utf-8")
     public_api = _public_api_catalog(payload, source_code)
     if not public_api:
