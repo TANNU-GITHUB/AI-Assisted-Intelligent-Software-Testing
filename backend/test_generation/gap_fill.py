@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import ast
-import re
 from typing import Any
 
 from input_handler.handler import load_session, save_session, session_dir
 from test_generation.black_box import _fallback_cases as _black_box_fallback
+from test_generation.safe_codegen import (
+    expected_exception_expression,
+    function_call_expression,
+    generated_test_imports,
+    json_expression,
+    require_python_identifier,
+)
 from test_generation.white_box import _fallback_cases as _white_box_fallback
 
 
@@ -22,28 +28,33 @@ def _write_gap_pytest(session_id: str, cases: list[dict[str, Any]]) -> str:
     lines = [
         "import sys",
         "from pathlib import Path",
-        "import pytest",
         "",
         "sys.path.insert(0, str(Path(__file__).resolve().parents[2]))",
-        "from source import *",
         "",
     ]
+    lines.extend(generated_test_imports())
     for index, case in enumerate(cases, start=1):
         function_name = case.get("function_name") or "target"
         req_id = case.get("requirement_id") or "REQ-01"
-        safe = re.sub(r"[^a-zA-Z0-9_]+", "_", f"{function_name}_{req_id}_{index}")
+        try:
+            function_name = require_python_identifier(function_name, "Function name")
+        except ValueError as exc:
+            raise GapFillError(str(exc)) from exc
+        safe = f"case_{index}"
         inputs = case.get("input") or {}
+        call = function_call_expression(function_name, inputs)
         lines.append(
             f"@pytest.mark.parametrize('_requirement_id', [{req_id!r}], ids=[{req_id!r}])"
         )
         lines.append(f"def test_gap_{safe}(_requirement_id):")
         if case.get("expected_exception"):
-            lines.append(f"    with pytest.raises({case['expected_exception']}):")
-            lines.append(f"        {function_name}(**{inputs!r})")
+            exception = expected_exception_expression(case["expected_exception"])
+            lines.append(f"    with pytest.raises({exception}):")
+            lines.append(f"        {call}")
         elif "expected_output" in case and case.get("expected_output") is not None:
-            lines.append(f"    assert {function_name}(**{inputs!r}) == {case['expected_output']!r}")
+            lines.append(f"    assert {call} == {json_expression(case['expected_output'])}")
         else:
-            lines.append(f"    {function_name}(**{inputs!r})")
+            lines.append(f"    {call}")
         lines.append("")
     tmp = out_file.with_suffix(out_file.suffix + ".tmp")
     tmp.write_text("\n".join(lines), encoding="utf-8")

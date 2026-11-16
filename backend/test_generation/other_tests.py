@@ -18,6 +18,13 @@ from config import NVIDIA_API_KEY, NVIDIA_MODEL
 from llm_client import generate_text, llm_is_configured
 from input_handler.handler import load_session, save_session, session_dir
 from input_handler.session_logging import log_session_error
+from test_generation.safe_codegen import (
+    expected_exception_expression,
+    function_call_expression,
+    generated_test_imports,
+    json_expression,
+    require_python_identifier,
+)
 
 
 class OtherTestsError(Exception):
@@ -189,7 +196,10 @@ Return ONLY a JSON array, no markdown, no explanation. Each item:
 
 
 def _validate_test_cases(
-    cases: list[dict], requirement_ids: set[str], test_type: str
+    cases: list[dict],
+    requirement_ids: set[str],
+    test_type: str,
+    allowed_functions: set[str] | None = None,
 ) -> None:
     for index, case in enumerate(cases, start=1):
         if not isinstance(case, dict):
@@ -204,6 +214,28 @@ def _validate_test_cases(
                 f"{test_type} test case {index} references unknown requirement_id "
                 f"'{requirement_id}'."
             )
+        target_keys = ("caller", "callee") if test_type == "integration" else ("function_name",)
+        for key in target_keys:
+            target = case.get(key)
+            if target is None and key == "callee" and test_type == "integration":
+                continue
+            try:
+                target = require_python_identifier(target, key)
+            except ValueError as exc:
+                raise OtherTestsError(
+                    f"{test_type} test case {index}: {exc}"
+                ) from exc
+            if allowed_functions is not None and target not in allowed_functions:
+                raise OtherTestsError(
+                    f"{test_type} test case {index} references unknown function '{target}'."
+                )
+        if case.get("expected_exception"):
+            try:
+                require_python_identifier(case["expected_exception"], "Exception name")
+            except ValueError as exc:
+                raise OtherTestsError(
+                    f"{test_type} test case {index}: {exc}"
+                ) from exc
 
 
 def _update_regression_suite(session_id: str, new_tests: list[dict]) -> int:
@@ -274,6 +306,8 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
     Each generated file inserts the session folder onto sys.path so it can
     do `from source import *` regardless of where pytest is invoked from.
     """
+    if test_type not in {"integration", "negative"}:
+        raise OtherTestsError(f"Unsupported test type '{test_type}'.")
     out_dir = session_dir(session_id) / "tests" / test_type
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"test_{test_type}.py"
@@ -281,19 +315,21 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
     lines = [
         "import sys",
         "from pathlib import Path",
-        "import pytest",
         "sys.path.insert(0, str(Path(__file__).resolve().parents[2]))",
         "",
     ]
-    lines.append("from source import *")
-    lines.append("")
-    lines.append("")
+    lines.extend(generated_test_imports())
 
     for i, case in enumerate(cases, start=1):
         func_name = case.get("function_name") or case.get("caller") or "target"
-        test_name = f"test_{test_type}_{func_name}_case{i}"
+        try:
+            func_name = require_python_identifier(func_name, "Function name")
+        except ValueError as exc:
+            raise OtherTestsError(str(exc)) from exc
+        test_name = f"test_{test_type}_case{i}"
         requirement_id = case["requirement_id"]
         input_kwargs = case.get("input", {}) or {}
+        call = function_call_expression(func_name, input_kwargs)
 
         lines.append(
             f"@pytest.mark.parametrize('_requirement_id', [{requirement_id!r}], "
@@ -301,9 +337,10 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
         )
         if test_type == "negative":
             expected_exc = case.get("expected_exception", "Exception")
+            exception = expected_exception_expression(expected_exc)
             lines.append(f"def {test_name}(_requirement_id):")
-            lines.append(f"    with pytest.raises({expected_exc}):")
-            lines.append(f"        {func_name}(**{input_kwargs!r})")
+            lines.append(f"    with pytest.raises({exception}):")
+            lines.append(f"        {call}")
         elif not case.get("assert_output", True):
             lines.append(f"def {test_name}(_requirement_id):")
             lines.append(
@@ -312,7 +349,7 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
         else:
             expected = case.get("expected_output")
             lines.append(f"def {test_name}(_requirement_id):")
-            lines.append(f"    assert {func_name}(**{input_kwargs!r}) == {expected!r}")
+            lines.append(f"    assert {call} == {json_expression(expected)}")
         lines.append("")
 
     content = "\n".join(lines)
@@ -352,8 +389,17 @@ def analyze_session_other_tests(session_id: str) -> dict:
             source_code, call_pairs, sorted(requirement_ids)
         )
         negative_tests = _generate_negative_tests(source_code, sorted(requirement_ids))
-        _validate_test_cases(integration_tests, requirement_ids, "integration")
-        _validate_test_cases(negative_tests, requirement_ids, "negative")
+        allowed_functions = {
+            node.name
+            for node in ast.walk(ast.parse(source_code))
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        _validate_test_cases(
+            integration_tests, requirement_ids, "integration", allowed_functions
+        )
+        _validate_test_cases(
+            negative_tests, requirement_ids, "negative", allowed_functions
+        )
     except OtherTestsError as exc:
         log_session_error(session_id, "test_generation", exc)
         raise

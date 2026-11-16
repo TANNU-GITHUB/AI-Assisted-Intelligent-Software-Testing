@@ -12,6 +12,13 @@ from llm_client import generate_text, llm_is_configured
 from input_handler.handler import load_session, save_session, session_dir
 from input_handler.session_logging import log_session_error
 from test_generation.prompts_black_box import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
+from test_generation.safe_codegen import (
+    expected_exception_expression,
+    function_call_expression,
+    generated_test_imports,
+    json_expression,
+    require_python_identifier,
+)
 
 
 class BlackBoxError(Exception):
@@ -175,6 +182,13 @@ def _normalize_cases(
             raise BlackBoxError(
                 f"Test case {index} needs expected_output or expected_exception."
             )
+        if expected_exception:
+            try:
+                expected_exception = require_python_identifier(
+                    str(expected_exception).strip(), "Exception name"
+                )
+            except ValueError as exc:
+                raise BlackBoxError(str(exc)) from exc
         normalized.append(
             {
                 "case_id": str(item.get("case_id") or f"bb{index}"),
@@ -289,19 +303,24 @@ def _write_pytest_file(session_id: str, cases: list[dict[str, Any]]) -> str:
     lines = [
         "import sys",
         "from pathlib import Path",
-        "import pytest",
         "",
         "sys.path.insert(0, str(Path(__file__).resolve().parents[2]))",
-        "from source import *",
         "",
     ]
+    lines.extend(generated_test_imports())
 
     for index, case in enumerate(cases, start=1):
         req_id = case["requirement_id"]
-        function_name = case["function_name"]
+        try:
+            function_name = require_python_identifier(
+                case["function_name"], "Function name"
+            )
+        except ValueError as exc:
+            raise BlackBoxError(str(exc)) from exc
         safe_req = re.sub(r"[^a-zA-Z0-9_]+", "_", req_id)
-        test_name = f"test_black_box_{safe_req}_case{index}"
+        test_name = f"test_black_box_case{index}_{safe_req}"
         inputs = case.get("input", {}) or {}
+        call = function_call_expression(function_name, inputs)
         lines.append(
             f"@pytest.mark.parametrize('_requirement_id', [{req_id!r}], ids=[{req_id!r}])"
         )
@@ -311,11 +330,12 @@ def _write_pytest_file(session_id: str, cases: list[dict[str, Any]]) -> str:
                 '    pytest.skip("Static fallback cannot determine the expected output.")'
             )
         elif case.get("expected_exception"):
-            lines.append(f"    with pytest.raises({case['expected_exception']}):")
-            lines.append(f"        {function_name}(**{inputs!r})")
+            exception_name = expected_exception_expression(case["expected_exception"])
+            lines.append(f"    with pytest.raises({exception_name}):")
+            lines.append(f"        {call}")
         else:
             expected = case.get("expected_output")
-            lines.append(f"    assert {function_name}(**{inputs!r}) == {expected!r}")
+            lines.append(f"    assert {call} == {json_expression(expected)}")
         lines.append("")
 
     content = "\n".join(lines)

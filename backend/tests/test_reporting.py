@@ -134,7 +134,7 @@ def test_generated_pytest_file_includes_requirement_id(tmp_path, monkeypatch):
 
     generated = Path(path).read_text(encoding="utf-8")
     assert "ids=['REQ-01']" in generated
-    assert "def test_integration_combined_case1(_requirement_id):" in generated
+    assert "def test_integration_case1(_requirement_id):" in generated
 
 
 def test_execution_retries_only_failed_tests_and_marks_flaky(tmp_path, monkeypatch):

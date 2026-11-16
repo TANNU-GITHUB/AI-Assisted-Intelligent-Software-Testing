@@ -12,6 +12,13 @@ from llm_client import generate_text, llm_is_configured
 from input_handler.handler import load_session, save_session, session_dir
 from input_handler.session_logging import log_session_error
 from test_generation.prompts_white_box import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
+from test_generation.safe_codegen import (
+    expected_exception_expression,
+    function_call_expression,
+    generated_test_imports,
+    json_expression,
+    require_python_identifier,
+)
 
 
 class WhiteBoxError(Exception):
@@ -66,6 +73,13 @@ def _normalize_cases(data: Any, function_name: str) -> list[dict[str, Any]]:
             raise WhiteBoxError(
                 f"Test case {case_id} needs expected_output or expected_exception."
             )
+        if expected_exception:
+            try:
+                expected_exception = require_python_identifier(
+                    str(expected_exception).strip(), "Exception name"
+                )
+            except ValueError as exc:
+                raise WhiteBoxError(str(exc)) from exc
         normalized.append(
             {
                 "case_id": case_id,
@@ -238,6 +252,10 @@ def _write_pytest_file(
     function_name: str,
     cases: list[dict[str, Any]],
 ) -> str:
+    try:
+        function_name = require_python_identifier(function_name, "Function name")
+    except ValueError as exc:
+        raise WhiteBoxError(str(exc)) from exc
     out_dir = session_dir(session_id) / "tests" / "white_box"
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_name = re.sub(r"[^a-zA-Z0-9_]+", "_", function_name)
@@ -246,12 +264,11 @@ def _write_pytest_file(
     lines = [
         "import sys",
         "from pathlib import Path",
-        "import pytest",
         "",
         "sys.path.insert(0, str(Path(__file__).resolve().parents[2]))",
-        "from source import *",
         "",
     ]
+    lines.extend(generated_test_imports())
 
     for index, case in enumerate(cases, start=1):
         req_id = case["requirement_id"]
@@ -266,11 +283,14 @@ def _write_pytest_file(
                 '    pytest.skip("Static fallback cannot determine the expected output.")'
             )
         elif case.get("expected_exception"):
-            lines.append(f"    with pytest.raises({case['expected_exception']}):")
-            lines.append(f"        {function_name}(**{inputs!r})")
+            exception_name = expected_exception_expression(case["expected_exception"])
+            call = function_call_expression(function_name, inputs)
+            lines.append(f"    with pytest.raises({exception_name}):")
+            lines.append(f"        {call}")
         else:
             expected = case.get("expected_output")
-            lines.append(f"    assert {function_name}(**{inputs!r}) == {expected!r}")
+            call = function_call_expression(function_name, inputs)
+            lines.append(f"    assert {call} == {json_expression(expected)}")
         lines.append("")
 
     content = "\n".join(lines)
