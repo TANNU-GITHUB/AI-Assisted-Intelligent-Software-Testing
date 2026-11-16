@@ -30,7 +30,23 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2").strip() or "llama3.2"
 
 # Auth
 AUTH_DB_PATH = ROOT_DIR / "data" / "auth.db"
-JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production-use-long-random-string")
+_JWT_UNSAFE_VALUES = {
+    "change-me-in-production-use-long-random-string",
+    "generate-a-long-random-secret-for-production",
+}
+JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
+if not JWT_SECRET or JWT_SECRET in _JWT_UNSAFE_VALUES:
+    raise RuntimeError(
+        "JWT_SECRET must be set to a strong, persistent random secret. "
+        "Generate one with: python -c "
+        "\"import secrets; print(secrets.token_hex(32))\""
+    )
+if len(JWT_SECRET.encode("utf-8")) < 32:
+    raise RuntimeError(
+        "JWT_SECRET must be at least 32 bytes. "
+        "Generate one with: python -c "
+        "\"import secrets; print(secrets.token_hex(32))\""
+    )
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))  # 7 days
 

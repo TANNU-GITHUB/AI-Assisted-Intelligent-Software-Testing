@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app import app
-from auth.store import init_db
+
+def pytest_configure():
+    os.environ["JWT_SECRET"] = "test-only-" + "0" * 64
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    from app import app
+    from auth.store import init_db
+
     db_path = tmp_path / "auth.db"
     monkeypatch.setattr("auth.store.AUTH_DB_PATH", db_path)
     init_db()

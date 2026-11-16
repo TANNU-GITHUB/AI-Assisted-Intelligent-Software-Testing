@@ -161,15 +161,22 @@ py -m venv venv
 pip install -r backend\requirements.txt
 ```
 
-Optionally copy `backend\.env.example` to `backend\.env` and set your NVIDIA API key (and Ollama if used locally):
+Copy `backend\.env.example` to `backend\.env` and set a persistent, randomly generated `JWT_SECRET`. Generate one with:
+
+```powershell
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Paste the generated value into `backend\.env`. Keep this secret stable: changing it invalidates existing login tokens and prevents decrypting stored GitHub OAuth tokens. Also set your NVIDIA API key (and Ollama if used locally) as needed:
 
 ```env
+JWT_SECRET=<generated-random-secret>
 NVIDIA_API_KEY=your_nvidia_key_here
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=llama3.2
 ```
 
-Do not commit `.env` files or API keys. If the key is not configured, requirement parsing uses a heuristic fallback.
+Do not commit `.env` files, JWT secrets, or API keys. The backend refuses to start if `JWT_SECRET` is missing, uses the known default, or is shorter than 32 bytes. If the NVIDIA key is not configured, requirement parsing uses a heuristic fallback.
 
 Start the backend from the `backend` directory:
 
