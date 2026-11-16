@@ -2,32 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
 from config import NVIDIA_API_KEY, NVIDIA_MODEL
 from llm_client import generate_text
 from input_handler.handler import load_session, save_session, session_dir, session_locked
+from json_utils import extract_json as _extract_json
 from requirement_analysis.prompts import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
 
 
 class RequirementAnalysisError(ValueError):
     """Raised when the LLM cannot produce valid structured requirements."""
-
-
-def _extract_json(text: str) -> Any:
-    cleaned = text.strip()
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
-    if fenced:
-        cleaned = fenced.group(1)
-    else:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise json.JSONDecodeError("No JSON object found", cleaned, 0)
-        cleaned = cleaned[start : end + 1]
-    return json.loads(cleaned)
 
 
 def _normalize(data: Any) -> list[dict[str, str]]:

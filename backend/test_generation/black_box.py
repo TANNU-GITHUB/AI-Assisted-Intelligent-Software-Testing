@@ -11,6 +11,7 @@ from config import NVIDIA_API_KEY, NVIDIA_MODEL
 from llm_client import generate_text, llm_is_configured
 from input_handler.handler import load_session, save_session, session_dir, session_locked
 from input_handler.session_logging import log_session_error
+from json_utils import extract_json as _extract_json
 from test_generation.prompts_black_box import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
 from test_generation.safe_codegen import (
     expected_exception_expression,
@@ -23,20 +24,6 @@ from test_generation.safe_codegen import (
 
 class BlackBoxError(Exception):
     """Raised when black-box test generation fails."""
-
-
-def _extract_json(text: str) -> Any:
-    cleaned = text.strip()
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
-    if fenced:
-        cleaned = fenced.group(1)
-    else:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise json.JSONDecodeError("No JSON object found", cleaned, 0)
-        cleaned = cleaned[start : end + 1]
-    return json.loads(cleaned)
 
 
 def _call_llm(prompt: str, api_key: str, model_name: str) -> str:
