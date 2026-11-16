@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from auth.token_crypto import decrypt_secret_with_upgrade
 from config import AUTH_DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 class AuthError(ValueError):
@@ -81,7 +85,29 @@ def init_db() -> None:
             )
             """
         )
+        _migrate_legacy_github_tokens(conn)
         conn.commit()
+
+
+def _migrate_legacy_github_tokens(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT user_id, access_token_enc FROM github_connections"
+    ).fetchall()
+    for row in rows:
+        try:
+            _plain, upgraded = decrypt_secret_with_upgrade(row["access_token_enc"])
+        except ValueError as exc:
+            logger.warning(
+                "Could not migrate stored GitHub token for user %s: %s",
+                row["user_id"],
+                exc,
+            )
+            continue
+        if upgraded:
+            conn.execute(
+                "UPDATE github_connections SET access_token_enc = ? WHERE user_id = ?",
+                (upgraded, row["user_id"]),
+            )
 
 
 def _row_to_user(row: sqlite3.Row) -> UserRecord:
@@ -233,6 +259,15 @@ def upsert_github_connection(
     if not connection:
         raise AuthError("Could not save GitHub connection.")
     return connection
+
+
+def update_github_access_token(user_id: str, access_token_enc: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE github_connections SET access_token_enc = ? WHERE user_id = ?",
+            (access_token_enc, user_id),
+        )
+        conn.commit()
 
 
 def delete_github_connection(user_id: str) -> None:

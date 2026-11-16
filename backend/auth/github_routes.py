@@ -22,9 +22,10 @@ from auth.store import (
     delete_github_connection,
     get_github_connection,
     get_github_public,
+    update_github_access_token,
     upsert_github_connection,
 )
-from auth.token_crypto import decrypt_secret, encrypt_secret
+from auth.token_crypto import decrypt_secret_with_upgrade, encrypt_secret
 
 router = APIRouter(prefix="/api/github", tags=["github"])
 
@@ -70,7 +71,10 @@ def _access_token(user: UserRecord) -> str:
     if not connection:
         raise HTTPException(status_code=400, detail="Connect GitHub first to browse repositories.")
     try:
-        return decrypt_secret(connection.access_token_enc)
+        token, upgraded_token = decrypt_secret_with_upgrade(connection.access_token_enc)
+        if upgraded_token:
+            update_github_access_token(user.id, upgraded_token)
+        return token
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Stored GitHub token is invalid. Reconnect GitHub.") from exc
 

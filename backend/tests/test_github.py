@@ -1,6 +1,22 @@
-from auth.store import upsert_github_connection
+import base64
+import hashlib
+import hmac
+import os
+
+from auth.store import get_github_connection, init_db, upsert_github_connection
 from auth.token_crypto import encrypt_secret
+from config import JWT_SECRET
 from tests.conftest import register_user
+
+
+def _legacy_encrypt(plain: str) -> str:
+    key = hashlib.sha256(f"oauth-token:{JWT_SECRET}".encode("utf-8")).digest()
+    nonce = os.urandom(16)
+    data = plain.encode("utf-8")
+    stream = hashlib.sha256(key + nonce).digest()
+    cipher = bytes(byte ^ stream[index % len(stream)] for index, byte in enumerate(data))
+    mac = hmac.new(key, nonce + cipher, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(nonce + mac + cipher).decode("ascii")
 
 
 def test_github_url_requires_config(client, monkeypatch):
@@ -107,6 +123,52 @@ def test_github_repos_and_import(client, monkeypatch):
     assert "def add" in body["source_code"]
     assert "Add two numbers" in body["requirements_text"]
     assert body["filename"] == "app.py"
+
+
+def test_legacy_github_token_is_upgraded_when_used(client, monkeypatch):
+    headers = register_user(client)
+    user = client.get("/api/auth/me", headers=headers).json()
+    token = "gho_" + "legacy-token-" * 8
+    upsert_github_connection(
+        user_id=user["id"],
+        github_id="1",
+        login="octocat",
+        avatar_url=None,
+        access_token_enc=_legacy_encrypt(token),
+        scope="repo",
+    )
+    monkeypatch.setattr(
+        "auth.github_routes.github_request",
+        lambda access_token, path, params=None: (
+            [] if access_token == token and path == "/user/repos" else None
+        ),
+    )
+
+    response = client.get("/api/github/repos", headers=headers)
+
+    assert response.status_code == 200
+    stored = get_github_connection(user["id"])
+    assert stored is not None
+    assert stored.access_token_enc.startswith("gAAAA")
+
+
+def test_legacy_github_tokens_migrate_during_database_initialization(client):
+    headers = register_user(client)
+    user = client.get("/api/auth/me", headers=headers).json()
+    upsert_github_connection(
+        user_id=user["id"],
+        github_id="1",
+        login="octocat",
+        avatar_url=None,
+        access_token_enc=_legacy_encrypt("gho_" + "legacy-token-" * 8),
+        scope="repo",
+    )
+
+    init_db()
+
+    stored = get_github_connection(user["id"])
+    assert stored is not None
+    assert stored.access_token_enc.startswith("gAAAA")
 
 
 def test_github_project_agent_runs_pipeline(client, monkeypatch):
