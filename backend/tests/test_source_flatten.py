@@ -1,3 +1,5 @@
+import ast
+
 from agents.source_flatten import (
     combine_requirement_docs,
     flatten_python_modules,
@@ -27,6 +29,72 @@ def test_flatten_combines_top_level_functions_and_renames_collisions():
     assert "shop/cart.py" in paths
     assert "shop/math.py" in paths
     assert result["function_count"] == 2
+
+
+def test_flatten_preserves_imports_constants_classes_and_async_functions():
+    result = flatten_python_modules(
+        [
+            (
+                "shop/service.py",
+                "import json\n"
+                "from pathlib import Path\n"
+                "DEFAULT_NAME = 'shop'\n"
+                "class Service:\n"
+                "    def name(self):\n"
+                "        return DEFAULT_NAME\n"
+                "async def load_name(path: Path):\n"
+                "    return json.loads(path.read_text())\n"
+                "def service_name():\n"
+                "    return Service().name()\n",
+            )
+        ]
+    )
+
+    tree = ast.parse(result["source_code"])
+    assert any(isinstance(node, ast.Import) and node.names[0].name == "json" for node in tree.body)
+    assert any(
+        isinstance(node, ast.ImportFrom) and node.module == "pathlib"
+        for node in tree.body
+    )
+    assert any(
+        isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "DEFAULT_NAME" for target in node.targets)
+        for node in tree.body
+    )
+    assert any(isinstance(node, ast.ClassDef) and node.name == "Service" for node in tree.body)
+    assert any(
+        isinstance(node, ast.AsyncFunctionDef) and node.name == "load_name"
+        for node in tree.body
+    )
+    assert result["function_count"] == 2
+    assert result["included"][0]["functions"] == ["load_name", "service_name"]
+
+
+def test_flatten_keeps_dependency_only_modules_with_generated_placeholder():
+    result = flatten_python_modules(
+        [
+            ("shop/constants.py", "DEFAULT_LIMIT: int = 12\n"),
+            ("shop/models.py", "class Order:\n    pass\n"),
+        ]
+    )
+
+    tree = ast.parse(result["source_code"])
+    assert any(
+        isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "DEFAULT_LIMIT"
+        for node in tree.body
+    )
+    assert any(isinstance(node, ast.ClassDef) and node.name == "Order" for node in tree.body)
+    assert any(
+        isinstance(node, ast.FunctionDef) and node.name == "project_placeholder"
+        for node in tree.body
+    )
+    assert {item["path"] for item in result["included"]} == {
+        "shop/constants.py",
+        "shop/models.py",
+        "(generated)",
+    }
 
 
 def test_combine_requirement_docs_skips_pip_lockfiles():
