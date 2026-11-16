@@ -41,14 +41,9 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
           </motion.div>
         )}
       </AnimatePresence>
-      <motion.div
-        key={pathname}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.4, delay: 0.15 }}
-      >
+      <div style={{ animation: 'fadeIn 0.3s ease' }}>
         {children}
-      </motion.div>
+      </div>
     </>
   );
 }
