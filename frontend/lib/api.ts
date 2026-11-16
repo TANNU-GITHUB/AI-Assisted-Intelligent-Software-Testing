@@ -1,4 +1,4 @@
-import { authHeaders } from './auth';
+import { authHeaders, handleUnauthorizedResponse } from './auth';
 
 export const SESSION_STORAGE_KEY = 'bugai_session_id';
 
@@ -151,6 +151,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (!headers.has(key)) headers.set(key, value);
   });
   const res = await fetch(apiUrl(path), { ...init, headers });
+  handleUnauthorizedResponse(res, headers.has('Authorization'));
   if (!res.ok) {
     throw new Error(await readError(res));
   }
@@ -223,9 +224,11 @@ export async function getSession(sessionId: string): Promise<SessionPayload> {
 }
 
 export async function downloadSessionReport(sessionId: string): Promise<void> {
+  const headers = new Headers(authHeaders());
   const res = await fetch(apiUrl(`/api/sessions/${sessionId}/report`), {
-    headers: authHeaders(),
+    headers,
   });
+  handleUnauthorizedResponse(res, headers.has('Authorization'));
   if (!res.ok) {
     throw new Error(await readError(res));
   }

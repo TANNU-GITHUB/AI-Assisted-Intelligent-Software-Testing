@@ -55,6 +55,15 @@ export function clearAccessToken() {
   document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
 }
 
+export function handleUnauthorizedResponse(res: Response, hasAuthorization: boolean): void {
+  if (res.status !== 401 || !hasAuthorization) return;
+  clearAccessToken();
+  if (typeof window !== 'undefined') {
+    window.location.href = '/auth/login?reason=session_expired';
+  }
+  throw new Error('Session expired. Please sign in again.');
+}
+
 export function authHeaders(): HeadersInit {
   const token = getAccessToken();
   if (!token) return {};
@@ -122,31 +131,40 @@ export function logout() {
 }
 
 export async function getGitHubAuthUrl(): Promise<{ url: string; state: string }> {
-  const res = await fetch(apiUrl('/api/github/url'), { headers: authHeaders() });
+  const headers = new Headers(authHeaders());
+  const res = await fetch(apiUrl('/api/github/url'), { headers });
+  handleUnauthorizedResponse(res, headers.has('Authorization'));
   if (!res.ok) throw new Error(await readError(res));
   return res.json() as Promise<{ url: string; state: string }>;
 }
 
 export async function completeGitHubOAuth(code: string, state: string): Promise<GitHubProfile> {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  new Headers(authHeaders()).forEach((value, key) => headers.set(key, value));
   const res = await fetch(apiUrl('/api/github/callback'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    headers,
     body: JSON.stringify({ code, state }),
   });
+  handleUnauthorizedResponse(res, headers.has('Authorization'));
   if (!res.ok) throw new Error(await readError(res));
   return res.json() as Promise<GitHubProfile>;
 }
 
 export async function fetchGitHubStatus(): Promise<GitHubProfile> {
-  const res = await fetch(apiUrl('/api/github/status'), { headers: authHeaders() });
+  const headers = new Headers(authHeaders());
+  const res = await fetch(apiUrl('/api/github/status'), { headers });
+  handleUnauthorizedResponse(res, headers.has('Authorization'));
   if (!res.ok) throw new Error(await readError(res));
   return res.json() as Promise<GitHubProfile>;
 }
 
 export async function disconnectGitHub(): Promise<void> {
+  const headers = new Headers(authHeaders());
   const res = await fetch(apiUrl('/api/github/connection'), {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers,
   });
+  handleUnauthorizedResponse(res, headers.has('Authorization'));
   if (!res.ok) throw new Error(await readError(res));
 }
