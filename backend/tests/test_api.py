@@ -1,6 +1,72 @@
 from tests.conftest import register_user
 
 
+def test_ownerless_sessions_are_denied_to_authenticated_users(
+    client, tmp_path, monkeypatch
+):
+    from input_handler.handler import create_session
+
+    monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    headers = register_user(client)
+    session = create_session(
+        source_code="def value():\n    return 1\n",
+        requirements_text="value returns one.",
+    )
+    session_id = session["session_id"]
+
+    response = client.get(f"/api/sessions/{session_id}", headers=headers)
+
+    assert response.status_code == 403
+
+
+def test_empty_owner_sessions_are_denied_to_authenticated_users(
+    client, tmp_path, monkeypatch
+):
+    from input_handler.handler import create_session, load_session, save_session
+
+    monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    headers = register_user(client)
+    session = create_session(
+        source_code="def value():\n    return 1\n",
+        requirements_text="value returns one.",
+    )
+    session_id = session["session_id"]
+    payload = load_session(session_id)
+    payload["owner_user_id"] = ""
+    save_session(payload)
+
+    response = client.put(
+        f"/api/sessions/{session_id}/source",
+        headers=headers,
+        json={"source_code": "def value():\n    return 2\n"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_other_users_cannot_run_actions_on_another_users_session(
+    client, tmp_path, monkeypatch
+):
+    from input_handler.handler import create_session
+
+    monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    owner_headers = register_user(client, username="session_owner")
+    other_headers = register_user(client, username="other_user")
+    owner = client.get("/api/auth/me", headers=owner_headers).json()
+    session = create_session(
+        source_code="def value():\n    return 1\n",
+        requirements_text="value returns one.",
+        owner_user_id=owner["id"],
+    )
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/code-analysis",
+        headers=other_headers,
+    )
+
+    assert response.status_code == 403
+
+
 def test_health(client):
     res = client.get("/api/health")
     assert res.status_code == 200
