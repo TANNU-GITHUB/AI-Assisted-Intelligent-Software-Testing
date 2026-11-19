@@ -184,6 +184,17 @@ export async function extractRequirementsDocument(file: File): Promise<{
   return request('/api/requirements/extract', { method: 'POST', body: form });
 }
 
+export async function extractRequirementsDiagram(file: File): Promise<{
+  filename: string;
+  requirements_text: string;
+  model?: string;
+  structured?: unknown;
+}> {
+  const form = new FormData();
+  form.append('diagram_file', file);
+  return request('/api/requirements/extract-diagram', { method: 'POST', body: form });
+}
+
 export async function createSession(
   sourceCode: string,
   requirementsText: string,

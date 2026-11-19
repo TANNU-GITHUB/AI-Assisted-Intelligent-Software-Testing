@@ -16,6 +16,10 @@ from auth.store import UserRecord, init_db
 from code_analysis.analyzer import CodeAnalysisError, analyze_session
 from config import ROOT_DIR
 from input_handler.documents import DocumentExtractError, extract_requirements_text
+from requirement_analysis.diagram_extractor import (
+    extract_requirements_from_diagram,
+    requirements_to_text,
+)
 from input_handler.handler import (
     InputValidationError,
     create_session,
@@ -83,6 +87,57 @@ async def extract_requirements_document(
     except DocumentExtractError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"filename": filename, "requirements_text": text}
+
+
+_ALLOWED_IMAGE_TYPES: dict[str, str] = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+_IMAGE_EXT_MAP: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+@app.post("/api/requirements/extract-diagram")
+async def extract_diagram_requirements(
+    diagram_file: UploadFile = File(...),
+) -> dict:
+    """Extract testable requirements from an uploaded diagram or flowchart image."""
+    content_type = (diagram_file.content_type or "").lower().split(";")[0].strip()
+    fname = (diagram_file.filename or "").lower()
+
+    # Infer MIME from extension when browser sends a generic type
+    if content_type not in _ALLOWED_IMAGE_TYPES:
+        for ext, ct in _IMAGE_EXT_MAP.items():
+            if fname.endswith(ext):
+                content_type = ct
+                break
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Please upload a PNG, JPEG, GIF, or WEBP image.",
+            )
+
+    raw = await diagram_file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be under 10 MB.")
+
+    result = extract_requirements_from_diagram(raw, content_type)
+    req_text = requirements_to_text(result.get("requirements", []))
+    return {
+        "filename": diagram_file.filename or "diagram",
+        "requirements_text": req_text,
+        "structured": result,
+        "model": result.get("model"),
+    }
 
 
 @app.get("/api/examples")

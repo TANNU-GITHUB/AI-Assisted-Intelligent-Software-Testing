@@ -15,11 +15,13 @@ import {
   Loader2,
   Zap,
   XCircle,
+  ImageIcon,
 } from 'lucide-react';
 import {
   checkHealth,
   createSession,
   extractRequirementsDocument,
+  extractRequirementsDiagram,
   fetchExample,
   persistSessionId,
   runCodeAnalysis,
@@ -88,8 +90,11 @@ export default function LiveLabPage() {
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [requirementsFilename, setRequirementsFilename] = useState('requirements.txt');
   const [extractingRequirements, setExtractingRequirements] = useState(false);
+  const [diagramPreview, setDiagramPreview] = useState<string | null>(null);
+  const [extractingDiagram, setExtractingDiagram] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const requirementsFileRef = useRef<HTMLInputElement>(null);
+  const diagramFileRef = useRef<HTMLInputElement>(null);
   const runningRef = useRef(false);
 
   useEffect(() => {
@@ -122,6 +127,34 @@ export default function LiveLabPage() {
       setError(err instanceof Error ? err.message : 'Could not read that requirements file.');
     } finally {
       setExtractingRequirements(false);
+    }
+  };
+
+  const onDiagramUpload = async (file: File) => {
+    const name = file.name.toLowerCase();
+    const allowed = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    if (!allowed.some((ext) => name.endsWith(ext))) {
+      setError('Diagrams must be PNG, JPEG, GIF, or WEBP images.');
+      return;
+    }
+    // Show local preview immediately
+    const previewUrl = URL.createObjectURL(file);
+    setDiagramPreview(previewUrl);
+    setExtractingDiagram(true);
+    setError(null);
+    try {
+      const result = await extractRequirementsDiagram(file);
+      setRequirements((prev) => {
+        const existing = prev.trim();
+        const newText = result.requirements_text.trim();
+        return existing ? `${existing}\n${newText}` : newText;
+      });
+      setRequirementsFilename(file.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not extract requirements from diagram.');
+      setDiagramPreview(null);
+    } finally {
+      setExtractingDiagram(false);
     }
   };
 
@@ -232,6 +265,7 @@ export default function LiveLabPage() {
     setStageIndex(0);
     setError(null);
     setSession(null);
+    setDiagramPreview(null);
   };
 
   const functions: FunctionAnalysis[] = session?.code_analysis?.functions || [];
@@ -347,7 +381,7 @@ export default function LiveLabPage() {
           </div>
 
           <div className="rounded-2xl border border-border bg-card overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted flex-wrap">
               <FileText className="w-4 h-4 text-yellow-500" />
               <span className="font-mono text-xs text-muted-foreground tracking-wider">REQUIREMENTS</span>
               <span className="ml-auto text-xs text-muted-foreground font-mono truncate max-w-[9rem]">
@@ -357,9 +391,18 @@ export default function LiveLabPage() {
                 type="button"
                 onClick={() => requirementsFileRef.current?.click()}
                 disabled={phase === 'running' || extractingRequirements}
-                className="text-xs font-mono text-yellow-500 hover:text-yellow-400"
+                className="text-xs font-mono text-yellow-500 hover:text-yellow-400 disabled:opacity-50"
               >
-                {extractingRequirements ? 'Reading…' : 'Upload PDF/Word'}
+                {extractingRequirements ? 'Reading…' : 'Upload Doc'}
+              </button>
+              <button
+                type="button"
+                onClick={() => diagramFileRef.current?.click()}
+                disabled={phase === 'running' || extractingDiagram}
+                className="flex items-center gap-1 text-xs font-mono text-yellow-500 hover:text-yellow-400 disabled:opacity-50"
+              >
+                <ImageIcon className="w-3 h-3" />
+                {extractingDiagram ? 'Analyzing…' : 'Upload Diagram'}
               </button>
               <input
                 ref={requirementsFileRef}
@@ -372,14 +415,47 @@ export default function LiveLabPage() {
                   e.target.value = '';
                 }}
               />
+              <input
+                ref={diagramFileRef}
+                type="file"
+                accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onDiagramUpload(file);
+                  e.target.value = '';
+                }}
+              />
             </div>
             <textarea
               value={requirements}
               onChange={(e) => setRequirements(e.target.value)}
-              disabled={phase === 'running' || extractingRequirements}
+              disabled={phase === 'running' || extractingRequirements || extractingDiagram}
               spellCheck={false}
               className="w-full h-[400px] p-4 bg-transparent font-mono text-xs text-foreground leading-relaxed resize-none outline-none scrollbar-hide"
             />
+            {diagramPreview && (
+              <div className="border-t border-border p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-mono text-xs text-muted-foreground">DIAGRAM PREVIEW</span>
+                  {extractingDiagram && (
+                    <span className="text-xs text-yellow-500 animate-pulse">Extracting requirements…</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDiagramPreview(null)}
+                    className="text-xs text-muted-foreground hover:text-red-400"
+                  >
+                    ✕ Remove
+                  </button>
+                </div>
+                <img
+                  src={diagramPreview}
+                  alt="Uploaded diagram"
+                  className="max-h-48 w-full object-contain rounded-lg border border-border"
+                />
+              </div>
+            )}
           </div>
 
           <div className="rounded-2xl border border-border bg-card overflow-hidden">

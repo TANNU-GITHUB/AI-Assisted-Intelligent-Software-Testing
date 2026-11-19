@@ -125,6 +125,85 @@ def _ollama_chat(prompt: str, *, model: str, temperature: float) -> str:
             return str(text).strip()
 
 
+def generate_from_image(
+    image_bytes: bytes,
+    mime_type: str,
+    prompt: str,
+    *,
+    api_key: str | None = None,
+    temperature: float = 0.2,
+) -> tuple[str, str]:
+    """Send an image + text prompt to a vision LLM. Returns (text, provider_label)."""
+    import base64
+
+    b64 = base64.b64encode(image_bytes).decode()
+    data_url = f"data:{mime_type};base64,{b64}"
+    nvidia_key = (api_key if api_key is not None else NVIDIA_API_KEY).strip()
+    errors: list[str] = []
+
+    # Try NVIDIA NIM vision model
+    if nvidia_key and nvidia_key not in PLACEHOLDER_KEYS:
+        for vision_model in (
+            "nvidia/llama-3.2-90b-vision-instruct",
+            "meta/llama-3.2-11b-vision-instruct",
+        ):
+            try:
+                url = f"{NVIDIA_BASE_URL.rstrip('/')}/chat/completions"
+                body = {
+                    "model": vision_model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "image_url", "image_url": {"url": data_url}},
+                                {"type": "text", "text": prompt},
+                            ],
+                        }
+                    ],
+                    "temperature": temperature,
+                    "max_tokens": 2048,
+                    "stream": False,
+                }
+                with httpx.Client(timeout=HTTP_TIMEOUT) as client:
+                    response = client.post(
+                        url,
+                        headers={
+                            "Authorization": f"Bearer {nvidia_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=body,
+                    )
+                    response.raise_for_status()
+                    return _extract_openai_content(response.json()), f"nvidia:{vision_model}"
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"NVIDIA {vision_model}: {exc}")
+
+    # Try Ollama llava fallback
+    try:
+        base = OLLAMA_BASE_URL.rstrip("/")
+        body = {
+            "model": "llava",
+            "messages": [{"role": "user", "content": prompt, "images": [b64]}],
+            "stream": False,
+        }
+        with httpx.Client(timeout=HTTP_TIMEOUT) as client:
+            response = client.post(f"{base}/api/chat", json=body)
+            response.raise_for_status()
+            data = response.json()
+            text = (data.get("message") or {}).get("content")
+            if text and str(text).strip():
+                return str(text).strip(), "ollama:llava"
+            raise ValueError("Ollama llava returned empty content.")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"Ollama llava: {exc}")
+
+    detail = "; ".join(errors) if errors else "No vision LLM configured."
+    raise LLMError(
+        f"Vision LLM request failed ({detail}). "
+        "Set NVIDIA_API_KEY in backend/.env or run Ollama locally with the llava model."
+    )
+
+
 def generate_text(
     prompt: str,
     *,
