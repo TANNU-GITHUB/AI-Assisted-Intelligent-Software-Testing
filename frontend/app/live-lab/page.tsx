@@ -89,6 +89,9 @@ export default function LiveLabPage() {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [requirementsFilename, setRequirementsFilename] = useState('requirements.txt');
+  const [requirementsInputType, setRequirementsInputType] = useState<
+    'text' | 'pdf' | 'document' | 'diagram'
+  >('text');
   const [extractingRequirements, setExtractingRequirements] = useState(false);
   const [diagramPreview, setDiagramPreview] = useState<string | null>(null);
   const [extractingDiagram, setExtractingDiagram] = useState(false);
@@ -110,11 +113,17 @@ export default function LiveLabPage() {
       .catch(() => undefined);
   }, []);
 
-  const onRequirementsUpload = async (file: File) => {
+  const onRequirementsUpload = async (file: File, uploadType: 'pdf' | 'document') => {
     const name = file.name.toLowerCase();
-    const allowed = ['.pdf', '.doc', '.docx', '.txt', '.md'];
+    const allowed = uploadType === 'pdf'
+      ? ['.pdf']
+      : ['.doc', '.docx', '.txt', '.md'];
     if (!allowed.some((ext) => name.endsWith(ext))) {
-      setError('Requirements must be a PDF, Word (.doc / .docx), or text file.');
+      setError(
+        uploadType === 'pdf'
+          ? 'Choose a PDF requirements file.'
+          : 'Requirements documents must be Word (.doc / .docx) or text (.txt / .md) files.'
+      );
       return;
     }
     setExtractingRequirements(true);
@@ -387,37 +396,80 @@ export default function LiveLabPage() {
               <span className="ml-auto text-xs text-muted-foreground font-mono truncate max-w-[9rem]">
                 {requirementsFilename}
               </span>
-              <button
-                type="button"
-                onClick={() => requirementsFileRef.current?.click()}
-                disabled={phase === 'running' || extractingRequirements}
-                className="text-xs font-mono text-yellow-500 hover:text-yellow-400 disabled:opacity-50"
+              <select
+                aria-label="Requirements input type"
+                value={requirementsInputType}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (
+                    value === 'text' ||
+                    value === 'pdf' ||
+                    value === 'document' ||
+                    value === 'diagram'
+                  ) {
+                    setRequirementsInputType(value);
+                  }
+                }}
+                disabled={phase === 'running' || extractingRequirements || extractingDiagram}
+                className="rounded border border-border bg-card px-2 py-1 text-xs text-foreground outline-none focus:border-yellow-500 disabled:opacity-50"
               >
-                {extractingRequirements ? 'Reading…' : 'Upload Doc'}
-              </button>
-              <button
-                type="button"
-                onClick={() => diagramFileRef.current?.click()}
-                disabled={phase === 'running' || extractingDiagram}
-                className="flex items-center gap-1 text-xs font-mono text-yellow-500 hover:text-yellow-400 disabled:opacity-50"
-              >
-                <ImageIcon className="w-3 h-3" />
-                {extractingDiagram ? 'Analyzing…' : 'Upload Diagram'}
-              </button>
+                <option value="text">Type or paste text</option>
+                <option value="pdf">Upload PDF requirements</option>
+                <option value="document">Upload Word/text requirements</option>
+                <option value="diagram">Upload flowchart image</option>
+              </select>
+              {requirementsInputType !== 'text' && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    requirementsInputType === 'diagram'
+                      ? diagramFileRef.current?.click()
+                      : requirementsFileRef.current?.click()
+                  }
+                  disabled={
+                    phase === 'running' ||
+                    extractingRequirements ||
+                    extractingDiagram
+                  }
+                  className="flex items-center gap-1 text-xs font-mono text-yellow-500 hover:text-yellow-400 disabled:opacity-50"
+                >
+                  {requirementsInputType === 'diagram' && <ImageIcon className="w-3 h-3" />}
+                  {extractingRequirements
+                    ? 'Reading…'
+                    : extractingDiagram
+                      ? 'Analyzing…'
+                      : requirementsInputType === 'pdf'
+                        ? 'Choose PDF'
+                        : requirementsInputType === 'document'
+                          ? 'Choose Document'
+                          : 'Choose Image'}
+                </button>
+              )}
               <input
                 ref={requirementsFileRef}
                 type="file"
-                accept=".pdf,.doc,.docx,.txt,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                aria-label="Requirements upload file"
+                accept={
+                  requirementsInputType === 'pdf'
+                    ? '.pdf,application/pdf'
+                    : '.doc,.docx,.txt,.md,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown'
+                }
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) onRequirementsUpload(file);
+                  if (
+                    file &&
+                    (requirementsInputType === 'pdf' || requirementsInputType === 'document')
+                  ) {
+                    onRequirementsUpload(file, requirementsInputType);
+                  }
                   e.target.value = '';
                 }}
               />
               <input
                 ref={diagramFileRef}
                 type="file"
+                aria-label="Flowchart image file"
                 accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp"
                 className="hidden"
                 onChange={(e) => {
@@ -428,6 +480,7 @@ export default function LiveLabPage() {
               />
             </div>
             <textarea
+              aria-label="Requirements text"
               value={requirements}
               onChange={(e) => setRequirements(e.target.value)}
               disabled={phase === 'running' || extractingRequirements || extractingDiagram}

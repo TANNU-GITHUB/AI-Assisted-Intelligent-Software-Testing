@@ -15,6 +15,94 @@ test.describe('App smoke', () => {
     await expect(page.getByTestId('run-analysis')).toBeVisible({ timeout: 60_000 });
   });
 
+  test('requirements input selector supports PDF, document, and flowchart uploads', async ({ page }) => {
+    await page.route('**/api/health', (route) =>
+      route.fulfill({ json: { status: 'ok' } })
+    );
+    await page.route('**/api/examples', (route) =>
+      route.fulfill({
+        json: {
+          filename: 'sample_source.py',
+          source_code: 'def sample():\n    return True\n',
+          requirements_text: 'Default requirement.',
+        },
+      })
+    );
+    await page.route('**/api/github/status', (route) =>
+      route.fulfill({ json: { connected: false } })
+    );
+    await page.route('**/api/requirements/extract', (route) => {
+      const requestBody = route.request().postDataBuffer()?.toString('utf8') || '';
+      const requirementsText = requestBody.includes('checkout_requirements.pdf')
+        ? 'Requirement from PDF.'
+        : 'Requirement from document.';
+      return route.fulfill({ json: { requirements_text: requirementsText } });
+    });
+    await page.route('**/api/requirements/extract-diagram', (route) =>
+      route.fulfill({ json: { requirements_text: 'Requirement from flowchart.' } })
+    );
+    let submittedSessionForm = '';
+    await page.route('**/api/sessions', (route) => {
+      submittedSessionForm = route.request().postDataBuffer()?.toString('utf8') || '';
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Mock session create failure' }),
+      });
+    });
+
+    await page.goto('/');
+    await page.evaluate(() => {
+      document.cookie = 'bugai_token=e2e-test-token; path=/';
+    });
+    await page.goto('/live-lab');
+    const inputType = page.getByRole('combobox', { name: 'Requirements input type' });
+    const requirements = page.getByRole('textbox', { name: 'Requirements text' });
+
+    await expect(requirements).toHaveValue('Default requirement.');
+    await inputType.selectOption('pdf');
+    await expect(inputType).toHaveValue('pdf');
+    await page.getByRole('button', { name: 'Choose PDF' }).click();
+    await page.getByLabel('Requirements upload file').setInputFiles({
+      name: 'checkout_requirements.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('dummy PDF'),
+    });
+    await expect(requirements).toHaveValue('Requirement from PDF.');
+
+    await inputType.selectOption('document');
+    await page.getByRole('button', { name: 'Choose Document' }).click();
+    await page.getByLabel('Requirements upload file').setInputFiles({
+      name: 'requirements.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: Buffer.from('dummy document'),
+    });
+    await expect(requirements).toHaveValue('Requirement from document.');
+
+    await inputType.selectOption('diagram');
+    await page.getByRole('button', { name: 'Choose Image' }).click();
+    await page.getByLabel('Flowchart image file').setInputFiles({
+      name: 'flowchart.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('dummy image'),
+    });
+    await expect(requirements).toHaveValue(
+      'Requirement from document.\nRequirement from flowchart.'
+    );
+
+    await inputType.selectOption('pdf');
+    await page.getByRole('button', { name: 'Choose PDF' }).click();
+    await page.getByLabel('Requirements upload file').setInputFiles({
+      name: 'checkout_requirements.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('dummy PDF'),
+    });
+    await expect(requirements).toHaveValue('Requirement from PDF.');
+    await page.getByTestId('run-analysis').click();
+    await expect(page.getByText('Mock session create failure')).toBeVisible();
+    expect(submittedSessionForm).toContain('Requirement from PDF.');
+  });
+
   test('rapid Run Analysis activations create only one session', async ({ page }) => {
     test.setTimeout(60_000);
     let createRequests = 0;
