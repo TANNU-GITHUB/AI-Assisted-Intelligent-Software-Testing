@@ -15,6 +15,7 @@ from auth.session_access import assert_session_owner
 from auth.store import UserRecord, init_db
 from code_analysis.analyzer import CodeAnalysisError, analyze_session
 from config import ROOT_DIR
+from input_handler.documents import DocumentExtractError, extract_requirements_text
 from input_handler.handler import (
     InputValidationError,
     create_session,
@@ -67,6 +68,21 @@ def _as_bool(value: str | bool) -> bool:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/api/requirements/extract")
+async def extract_requirements_document(
+    requirements_file: UploadFile = File(...),
+    user: UserRecord = Depends(get_current_user),
+) -> dict[str, str]:
+    _ = user
+    filename = requirements_file.filename or "requirements.bin"
+    raw = await requirements_file.read()
+    try:
+        text = extract_requirements_text(filename, raw)
+    except DocumentExtractError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"filename": filename, "requirements_text": text}
 
 
 @app.get("/api/examples")

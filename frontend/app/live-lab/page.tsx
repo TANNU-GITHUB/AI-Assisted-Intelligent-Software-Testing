@@ -19,6 +19,7 @@ import {
 import {
   checkHealth,
   createSession,
+  extractRequirementsDocument,
   fetchExample,
   persistSessionId,
   runCodeAnalysis,
@@ -85,7 +86,10 @@ export default function LiveLabPage() {
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionPayload | null>(null);
+  const [requirementsFilename, setRequirementsFilename] = useState('requirements.txt');
+  const [extractingRequirements, setExtractingRequirements] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const requirementsFileRef = useRef<HTMLInputElement>(null);
   const runningRef = useRef(false);
 
   useEffect(() => {
@@ -96,9 +100,30 @@ export default function LiveLabPage() {
         setSourceCode(example.source_code);
         setRequirements(example.requirements_text);
         setFilename(example.filename);
+        setRequirementsFilename('requirements.txt');
       })
       .catch(() => undefined);
   }, []);
+
+  const onRequirementsUpload = async (file: File) => {
+    const name = file.name.toLowerCase();
+    const allowed = ['.pdf', '.doc', '.docx', '.txt', '.md'];
+    if (!allowed.some((ext) => name.endsWith(ext))) {
+      setError('Requirements must be a PDF, Word (.doc / .docx), or text file.');
+      return;
+    }
+    setExtractingRequirements(true);
+    setError(null);
+    try {
+      const extracted = await extractRequirementsDocument(file);
+      setRequirements(extracted.requirements_text);
+      setRequirementsFilename(file.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read that requirements file.');
+    } finally {
+      setExtractingRequirements(false);
+    }
+  };
 
   const onUpload = (file: File) => {
     if (!file.name.toLowerCase().endsWith('.py')) {
@@ -259,7 +284,10 @@ export default function LiveLabPage() {
           onImported={({ filename: name, source_code, requirements_text }) => {
             setFilename(name);
             setSourceCode(source_code);
-            if (requirements_text.trim()) setRequirements(requirements_text);
+            if (requirements_text.trim()) {
+              setRequirements(requirements_text);
+              setRequirementsFilename('requirements.txt');
+            }
             setError(null);
           }}
           onProjectStart={() => {
@@ -322,12 +350,33 @@ export default function LiveLabPage() {
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted">
               <FileText className="w-4 h-4 text-yellow-500" />
               <span className="font-mono text-xs text-muted-foreground tracking-wider">REQUIREMENTS</span>
-              <span className="ml-auto text-xs text-muted-foreground font-mono">requirements.txt</span>
+              <span className="ml-auto text-xs text-muted-foreground font-mono truncate max-w-[9rem]">
+                {requirementsFilename}
+              </span>
+              <button
+                type="button"
+                onClick={() => requirementsFileRef.current?.click()}
+                disabled={phase === 'running' || extractingRequirements}
+                className="text-xs font-mono text-yellow-500 hover:text-yellow-400"
+              >
+                {extractingRequirements ? 'Reading…' : 'Upload PDF/Word'}
+              </button>
+              <input
+                ref={requirementsFileRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onRequirementsUpload(file);
+                  e.target.value = '';
+                }}
+              />
             </div>
             <textarea
               value={requirements}
               onChange={(e) => setRequirements(e.target.value)}
-              disabled={phase === 'running'}
+              disabled={phase === 'running' || extractingRequirements}
               spellCheck={false}
               className="w-full h-[400px] p-4 bg-transparent font-mono text-xs text-foreground leading-relaxed resize-none outline-none scrollbar-hide"
             />

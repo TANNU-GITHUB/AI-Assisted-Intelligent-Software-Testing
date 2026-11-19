@@ -6,7 +6,7 @@ An AI-assisted testing tool that analyzes a Python source file and natural-langu
 
 ## What the project does today
 
-- Accepts a Python source file and requirements written in natural language, including files imported from a connected GitHub account.
+- Accepts a Python source file and requirements written in natural language, including PDF or Word (.doc / .docx) requirement documents, plus files imported from a connected GitHub account.
 - Can walk a connected GitHub repository, collect Python modules and requirement docs, and run the full white-box / black-box pipeline on the combined project.
 - Analyzes Python functions and branches using the built-in AST module.
 - Converts requirements into structured, traceable requirement records using NVIDIA NIM (with Ollama fallback) when configured, with a heuristic fallback if LLM calls fail.

@@ -175,6 +175,15 @@ export async function fetchExample(): Promise<{
   return request('/api/examples');
 }
 
+export async function extractRequirementsDocument(file: File): Promise<{
+  filename: string;
+  requirements_text: string;
+}> {
+  const form = new FormData();
+  form.append('requirements_file', file);
+  return request('/api/requirements/extract', { method: 'POST', body: form });
+}
+
 export async function createSession(
   sourceCode: string,
   requirementsText: string,
