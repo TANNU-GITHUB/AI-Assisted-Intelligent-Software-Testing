@@ -16,6 +16,10 @@ class DocumentExtractError(ValueError):
     pass
 
 
+class DocumentVisionError(DocumentExtractError):
+    pass
+
+
 def extract_requirements_text(filename: str, raw: bytes) -> str:
     if not filename:
         raise DocumentExtractError("Upload a named PDF or Word document.")
@@ -30,6 +34,7 @@ def extract_requirements_text(filename: str, raw: bytes) -> str:
 
     if suffix == ".pdf":
         text = _from_pdf(raw)
+        text = _with_pdf_visuals(raw, text)
     elif suffix == ".docx":
         text = _from_docx(raw)
     elif suffix == ".doc":
@@ -45,6 +50,30 @@ def extract_requirements_text(filename: str, raw: bytes) -> str:
     if len(cleaned) > MAX_EXTRACTED_CHARS:
         cleaned = cleaned[:MAX_EXTRACTED_CHARS] + "\n\n# …truncated…"
     return cleaned
+
+
+def _with_pdf_visuals(raw: bytes, text: str) -> str:
+    """Append flowchart, diagram, pseudocode, or scanned-page text from a PDF.
+
+    Ordinary text extraction is unchanged when the PDF has no visual pages.
+    A vision failure does not discard text that was already extracted.
+    """
+    from input_handler.pdf_visual import PdfVisualError, visual_text_from_pdf
+
+    try:
+        visual = visual_text_from_pdf(raw)
+    except PdfVisualError as exc:
+        detail = (
+            "The PDF text was extracted, but its visual content could not be "
+            f"analyzed: {exc}"
+        )
+        raise DocumentVisionError(detail) from exc
+    visual = _normalize(visual)
+    if not visual:
+        return text
+    if not text.strip():
+        return visual
+    return f"{text.rstrip()}\n\n{visual}"
 
 
 def _suffix(filename: str) -> str:
@@ -82,6 +111,12 @@ def _from_pdf(raw: bytes) -> str:
         reader = PdfReader(io.BytesIO(raw))
     except Exception as exc:  # noqa: BLE001
         raise DocumentExtractError("Could not read that PDF.") from exc
+    from input_handler.pdf_visual import MAX_PDF_PAGES
+
+    if len(reader.pages) > MAX_PDF_PAGES:
+        raise DocumentExtractError(
+            f"PDF has more than {MAX_PDF_PAGES} pages. Split it into smaller files."
+        )
     pages: list[str] = []
     for page in reader.pages:
         try:

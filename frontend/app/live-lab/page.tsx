@@ -113,6 +113,12 @@ export default function LiveLabPage() {
       .catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (diagramPreview) URL.revokeObjectURL(diagramPreview);
+    };
+  }, [diagramPreview]);
+
   const onRequirementsUpload = async (file: File, uploadType: 'pdf' | 'document') => {
     const name = file.name.toLowerCase();
     const allowed = uploadType === 'pdf'
@@ -149,6 +155,7 @@ export default function LiveLabPage() {
     // Show local preview immediately
     const previewUrl = URL.createObjectURL(file);
     setDiagramPreview(previewUrl);
+    setRequirementsFilename(file.name);
     setExtractingDiagram(true);
     setError(null);
     try {
@@ -158,10 +165,8 @@ export default function LiveLabPage() {
         const newText = result.requirements_text.trim();
         return existing ? `${existing}\n${newText}` : newText;
       });
-      setRequirementsFilename(file.name);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not extract requirements from diagram.');
-      setDiagramPreview(null);
     } finally {
       setExtractingDiagram(false);
     }
@@ -200,13 +205,22 @@ export default function LiveLabPage() {
       latest = withReqs;
       setSession(withReqs);
       setStageIndex(3);
-      const withWhiteBox = await runWhiteBoxTests(created.session_id);
-      latest = withWhiteBox;
-      setSession(withWhiteBox);
+      try {
+        const withWhiteBox = await runWhiteBoxTests(created.session_id);
+        latest = withWhiteBox;
+        setSession(withWhiteBox);
+      } catch (wbErr) {
+        console.warn('White-box test generation notice:', wbErr);
+      }
       setStageIndex(4);
-      const withBlackBox = await runBlackBoxTests(created.session_id);
-      latest = withBlackBox;
-      setSession(withBlackBox);
+
+      try {
+        const withBlackBox = await runBlackBoxTests(created.session_id);
+        latest = withBlackBox;
+        setSession(withBlackBox);
+      } catch (bbErr) {
+        console.warn('Black-box test generation notice:', bbErr);
+      }
       setStageIndex(5);
 
       try {
@@ -490,7 +504,9 @@ export default function LiveLabPage() {
             {diagramPreview && (
               <div className="border-t border-border p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-xs text-muted-foreground">DIAGRAM PREVIEW</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    DIAGRAM PREVIEW · {requirementsFilename}
+                  </span>
                   {extractingDiagram && (
                     <span className="text-xs text-yellow-500 animate-pulse">Extracting requirements…</span>
                   )}

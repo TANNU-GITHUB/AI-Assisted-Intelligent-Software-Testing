@@ -15,13 +15,21 @@ SCHEMA_VERSION = "1.0"
 
 # Primary: NVIDIA NIM (OpenAI-compatible)
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "").strip()
+DEFAULT_NVIDIA_MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
 NVIDIA_MODEL = (
-    os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct").strip()
-    or "meta/llama-3.3-70b-instruct"
+    os.getenv("NVIDIA_MODEL", DEFAULT_NVIDIA_MODEL).strip()
+    or DEFAULT_NVIDIA_MODEL
 )
 NVIDIA_BASE_URL = (
     os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip()
     or "https://integrate.api.nvidia.com/v1"
+)
+DEFAULT_NVIDIA_VISION_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+# Vision: NVIDIA Nemotron 3.5 Super VL (OpenAI-compatible chat completions).
+# https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b
+NVIDIA_VISION_MODEL = (
+    os.getenv("NVIDIA_VISION_MODEL", DEFAULT_NVIDIA_VISION_MODEL).strip()
+    or DEFAULT_NVIDIA_VISION_MODEL
 )
 
 # Fallback: local Ollama

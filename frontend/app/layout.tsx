@@ -21,11 +21,11 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'BUG/AI — AI-Assisted Intelligent Software Testing',
+  title: 'AI-Assisted Intelligent Software Testing',
   description:
     'AI-powered software testing that analyzes requirements, understands source code, generates test cases, executes them, and turns failures into actionable reports.',
   openGraph: {
-    title: 'BUG/AI — AI-Assisted Intelligent Software Testing',
+    title: 'AI-Assisted Intelligent Software Testing',
     description:
       'Find bugs before your users do. AI-assisted software testing with 3D visualization.',
   },

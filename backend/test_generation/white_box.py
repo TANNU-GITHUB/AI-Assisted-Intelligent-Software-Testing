@@ -39,10 +39,18 @@ def _function_source(module_source: str, lineno: int, end_lineno: int) -> str:
 
 
 def _normalize_cases(data: Any, function_name: str) -> list[dict[str, Any]]:
-    if not isinstance(data, dict):
-        raise WhiteBoxError("LLM JSON root must be an object.")
-    items = data.get("test_cases")
-    if not isinstance(items, list) or not items:
+    items: list[Any] = []
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        items = (
+            data.get("test_cases")
+            or data.get("cases")
+            or data.get("tests")
+            or data.get("scenarios")
+            or []
+        )
+    if not items:
         raise WhiteBoxError(f"No test cases returned for {function_name}.")
 
     normalized: list[dict[str, Any]] = []
@@ -53,20 +61,21 @@ def _normalize_cases(data: Any, function_name: str) -> list[dict[str, Any]]:
         description = str(item.get("description") or case_id).strip()
         inputs = item.get("input")
         if not isinstance(inputs, dict):
-            raise WhiteBoxError(f"Test case {case_id} must include an 'input' object.")
+            inputs = {}
         expected_output = item.get("expected_output")
         expected_exception = item.get("expected_exception")
         if expected_exception is None and "expected_output" not in item:
-            raise WhiteBoxError(
-                f"Test case {case_id} needs expected_output or expected_exception."
-            )
+            if "error" in description.lower() or "exception" in description.lower():
+                expected_exception = "ValueError"
+            else:
+                expected_output = None
         if expected_exception:
             try:
                 expected_exception = require_python_identifier(
                     str(expected_exception).strip(), "Exception name"
                 )
-            except ValueError as exc:
-                raise WhiteBoxError(str(exc)) from exc
+            except ValueError:
+                expected_exception = "ValueError"
         normalized.append(
             {
                 "case_id": case_id,

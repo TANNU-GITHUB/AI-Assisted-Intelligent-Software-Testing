@@ -68,7 +68,7 @@ export function Navbar() {
                 <div className="absolute inset-0 bg-yellow-500/20 blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
               <span className="font-mono text-sm font-bold tracking-wider text-slate-800 dark:text-white">
-                BUG<span className="text-yellow-500">/</span>AI
+                AI Testing
               </span>
             </Link>
 

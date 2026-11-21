@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -15,8 +16,13 @@ from auth.session_access import assert_session_owner
 from auth.store import UserRecord, init_db
 from code_analysis.analyzer import CodeAnalysisError, analyze_session
 from config import ROOT_DIR
-from input_handler.documents import DocumentExtractError, extract_requirements_text
+from input_handler.documents import (
+    DocumentExtractError,
+    DocumentVisionError,
+    extract_requirements_text,
+)
 from requirement_analysis.diagram_extractor import (
+    DiagramExtractionError,
     extract_requirements_from_diagram,
     requirements_to_text,
 )
@@ -28,6 +34,9 @@ from input_handler.handler import (
     update_session_source,
 )
 from pipeline import run_phase1
+
+
+logger = logging.getLogger(__name__)
 from requirement_analysis.analyzer import RequirementAnalysisError, analyze_session_requirements
 from test_generation.black_box import BlackBoxError, analyze_session_black_box
 from test_generation.gap_fill import GapFillError, analyze_session_gap_fill
@@ -84,6 +93,8 @@ async def extract_requirements_document(
     raw = await requirements_file.read()
     try:
         text = extract_requirements_text(filename, raw)
+    except DocumentVisionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except DocumentExtractError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"filename": filename, "requirements_text": text}
@@ -130,8 +141,14 @@ async def extract_diagram_requirements(
     if len(raw) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image must be under 10 MB.")
 
-    result = extract_requirements_from_diagram(raw, content_type)
-    req_text = requirements_to_text(result.get("requirements", []))
+    try:
+        result = extract_requirements_from_diagram(raw, content_type)
+    except DiagramExtractionError as exc:
+        logger.warning("Diagram requirements extraction failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    req_text = (result.get("plain_text") or "").strip() or requirements_to_text(
+        result.get("requirements", [])
+    )
     return {
         "filename": diagram_file.filename or "diagram",
         "requirements_text": req_text,

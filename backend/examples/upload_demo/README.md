@@ -14,5 +14,6 @@ extracted requirements to the text already in the editor. Then select
 analysis. Click **Run Analysis** to generate test cases from the extracted
 requirements and uploaded Python source.
 
-Flowchart extraction uses the configured vision model when available and falls
-back to the application's heuristic behavior when a vision model cannot be used.
+Flowchart extraction uses the configured NVIDIA vision model or the configured
+local Ollama vision model. If neither can analyze the image, the app displays an
+error instead of creating placeholder requirements.

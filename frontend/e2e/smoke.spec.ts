@@ -38,9 +38,17 @@ test.describe('App smoke', () => {
         : 'Requirement from document.';
       return route.fulfill({ json: { requirements_text: requirementsText } });
     });
-    await page.route('**/api/requirements/extract-diagram', (route) =>
-      route.fulfill({ json: { requirements_text: 'Requirement from flowchart.' } })
-    );
+    await page.route('**/api/requirements/extract-diagram', (route) => {
+      const requestBody = route.request().postDataBuffer()?.toString('utf8') || '';
+      if (requestBody.includes('failed-flowchart.png')) {
+        return route.fulfill({
+          status: 502,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Vision service unavailable.' }),
+        });
+      }
+      return route.fulfill({ json: { requirements_text: 'Requirement from flowchart.' } });
+    });
     let submittedSessionForm = '';
     await page.route('**/api/sessions', (route) => {
       submittedSessionForm = route.request().postDataBuffer()?.toString('utf8') || '';
@@ -86,9 +94,20 @@ test.describe('App smoke', () => {
       mimeType: 'image/png',
       buffer: Buffer.from('dummy image'),
     });
+    await expect(page.getByAltText('Uploaded diagram')).toBeVisible();
+    await expect(page.getByText('DIAGRAM PREVIEW · flowchart.png')).toBeVisible();
     await expect(requirements).toHaveValue(
       'Requirement from document.\nRequirement from flowchart.'
     );
+
+    await page.getByLabel('Flowchart image file').setInputFiles({
+      name: 'failed-flowchart.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('dummy image'),
+    });
+    await expect(page.getByText('Vision service unavailable.')).toBeVisible();
+    await expect(page.getByAltText('Uploaded diagram')).toBeVisible();
+    await expect(page.getByText('DIAGRAM PREVIEW · failed-flowchart.png')).toBeVisible();
 
     await inputType.selectOption('pdf');
     await page.getByRole('button', { name: 'Choose PDF' }).click();

@@ -17,10 +17,56 @@ class RequirementAnalysisError(ValueError):
 
 
 def _normalize(data: Any) -> list[dict[str, str]]:
+    candidate_keys = (
+        "requirements",
+        "testable_scenarios",
+        "scenarios",
+        "rules",
+        "test_cases",
+        "cases",
+        "specifications",
+        "items",
+        "steps",
+        "flowchart",
+        "flows",
+        "requirements_list",
+    )
+    items: Any = None
     if isinstance(data, list):
         items = data
     elif isinstance(data, dict):
-        items = data.get("requirements")
+        for key in candidate_keys:
+            val = data.get(key)
+            if isinstance(val, list) and val:
+                items = val
+                break
+
+        if items is None:
+            for val in data.values():
+                if isinstance(val, dict):
+                    for key in candidate_keys:
+                        nested_val = val.get(key)
+                        if isinstance(nested_val, list) and nested_val:
+                            items = nested_val
+                            break
+                    if items is not None:
+                        break
+
+        if items is None:
+            if any(k in data for k in ("condition", "if", "when", "trigger")) and any(
+                k in data for k in ("expected_result", "expected", "then", "outcome", "result")
+            ):
+                items = [data]
+
+        if items is None:
+            for val in data.values():
+                if isinstance(val, list) and val and isinstance(val[0], dict):
+                    items = val
+                    break
+
+        if items is None and data and all(isinstance(v, dict) for v in data.values()):
+            items = list(data.values())
+
         if items is None:
             raise RequirementAnalysisError("JSON is missing a 'requirements' array.")
     else:
@@ -32,13 +78,52 @@ def _normalize(data: Any) -> list[dict[str, str]]:
     normalized: list[dict[str, str]] = []
     for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
-            raise RequirementAnalysisError("Each requirement must be a JSON object.")
-        condition = str(item.get("condition") or "").strip()
-        expected = str(item.get("expected_result") or item.get("expected") or "").strip()
+            if isinstance(item, str) and item.strip():
+                item = {"condition": item.strip()}
+            else:
+                continue
+        condition = str(
+            item.get("condition")
+            or item.get("if")
+            or item.get("when")
+            or item.get("trigger")
+            or item.get("input")
+            or item.get("description")
+            or item.get("rule")
+            or item.get("scenario")
+            or ""
+        ).strip()
+        expected = str(
+            item.get("expected_result")
+            or item.get("expected")
+            or item.get("then")
+            or item.get("outcome")
+            or item.get("output")
+            or item.get("result")
+            or ""
+        ).strip()
+
+        if condition and not expected:
+            if " then " in condition.lower():
+                parts = re.split(r"\s+then\s+", condition, flags=re.IGNORECASE, maxsplit=1)
+                condition = parts[0].strip()
+                if condition.lower().startswith("if "):
+                    condition = condition[3:].strip()
+                expected = parts[1].strip()
+            elif "->" in condition:
+                parts = condition.split("->", 1)
+                condition = parts[0].strip()
+                expected = parts[1].strip()
+            elif "=>" in condition:
+                parts = condition.split("=>", 1)
+                condition = parts[0].strip()
+                expected = parts[1].strip()
+            else:
+                expected = "expected outcome is satisfied"
+
         if not condition or not expected:
-            raise RequirementAnalysisError(
-                "Each requirement needs both 'condition' and 'expected_result'."
-            )
+            continue
+
         req_id = str(item.get("requirement_id") or f"REQ-{index:02d}").strip()
         if not re.fullmatch(r"REQ-\d+", req_id, flags=re.IGNORECASE):
             req_id = f"REQ-{index:02d}"
@@ -52,6 +137,9 @@ def _normalize(data: Any) -> list[dict[str, str]]:
                 "source_excerpt": str(item.get("source_excerpt") or "").strip(),
             }
         )
+
+    if not normalized:
+        raise RequirementAnalysisError("No testable requirements were extracted.")
 
     # Guarantee unique sequential IDs even if the model duplicated them.
     for index, item in enumerate(normalized, start=1):

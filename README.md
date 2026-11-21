@@ -2,19 +2,20 @@
 
 An AI-assisted testing tool that analyzes a Python source file and natural-language requirements, generates tests, executes them, measures coverage, and produces a report.
 
-> **Current scope:** Live Lab can test a single Python file, or — after GitHub access is granted — run a project agent that walks the repository, combines top-level Python functions, and runs white-box plus black-box testing on that combined project. Class methods, non-Python languages, and true cross-package integration (real import graphs) are still limited. Diagram-based requirements are future work.
+> **Current scope:** Live Lab can test a single Python file, or — after GitHub access is granted — run a project agent that walks the repository, combines top-level Python functions, and runs white-box plus black-box testing on that combined project. It can also extract requirements from flowchart images and visual pages in PDFs. Class methods, non-Python languages, and true cross-package integration (real import graphs) are still limited.
 
 ## What the project does today
 
 - Accepts a Python source file and requirements written in natural language, including PDF or Word (.doc / .docx) requirement documents, plus files imported from a connected GitHub account.
+- Extracts visual requirements from PNG, JPEG, GIF, or WEBP diagrams and from scanned or diagram-containing PDF pages using a configured NVIDIA vision model or local Ollama. PDFs are limited to 50 pages and four visual pages/elements per upload.
 - Can walk a connected GitHub repository, collect Python modules and requirement docs, and run the full white-box / black-box pipeline on the combined project.
 - Analyzes Python functions and branches using the built-in AST module.
-- Converts requirements into structured, traceable requirement records using NVIDIA NIM (with Ollama fallback) when configured, with a heuristic fallback if LLM calls fail.
+- Converts requirements into structured, traceable requirement records using NVIDIA NIM (with Ollama fallback) when configured, with a heuristic fallback for text requirements. Visual extraction failures are reported rather than replaced with fabricated requirements.
 - Generates white-box tests (code-structure driven), black-box tests (requirements and public API only), and additional negative and same-file integration-style tests.
 - Executes generated tests with pytest and measures coverage with coverage.py.
 - Stores run data in a session directory and generates a downloadable HTML report.
 
-The current system does **not** execute the original package import graph as-is, accept diagrams or flowcharts as requirements, or perform mutation testing.
+The current system does **not** execute the original package import graph as-is or perform mutation testing.
 
 ## Architecture
 
@@ -167,16 +168,19 @@ Copy `backend\.env.example` to `backend\.env` and set a persistent, randomly gen
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Paste the generated value into `backend\.env`. Keep this secret stable: changing it invalidates existing login tokens and prevents decrypting stored GitHub OAuth tokens. Also set your NVIDIA API key (and Ollama if used locally) as needed:
+Paste the generated value into `backend\.env`. Keep this secret stable: changing it invalidates existing login tokens and prevents decrypting stored GitHub OAuth tokens. Add provider keys privately as needed:
 
 ```env
 JWT_SECRET=<generated-random-secret>
 NVIDIA_API_KEY=your_nvidia_key_here
+NVIDIA_VISION_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+GEMINI_API_KEY=
+GEMINI_VISION_MODEL=gemini-4-hydrogen
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=llama3.2
 ```
 
-Do not commit `.env` files, JWT secrets, or API keys. The backend refuses to start if `JWT_SECRET` is missing, uses the known default, or is shorter than 32 bytes. If the NVIDIA key is not configured, requirement parsing uses a heuristic fallback.
+Image analysis tries NVIDIA, then Gemini when `GEMINI_API_KEY` is configured, then local Ollama. Gemini image requests use `store=false`, but image bytes are still sent to Google's API for processing. The NVIDIA vision model uses the same backend-only `NVIDIA_API_KEY` as the text model. Do not commit `.env` files, JWT secrets, or API keys. The backend refuses to start if `JWT_SECRET` is missing, uses the known default, or is shorter than 32 bytes. If no text LLM is configured, text requirement parsing uses a heuristic fallback.
 
 Start the backend from the `backend` directory:
 
@@ -221,7 +225,6 @@ The smoke tests check basic frontend pages and can check backend health when the
 These are planned extensions, not features in the current user-facing workflow:
 
 - **GitHub-based repository integration testing:** The project agent now walks a connected repo and tests combined top-level functions. Running tests against the original package layout and import graph remains future work.
-- **Diagram and flowchart requirements:** Allow users to provide diagrams or flowcharts, interpret them as behavioral scenarios, and generate tests from the resulting structured requirements.
 - **Jev semantic UI testing:** The repository contains an internal Jev prototype, but it is not part of the current demo or user-facing workflow.
 - **Broader testing improvements:** Additional languages, mutation testing, and coverage-guided iterative test refinement may be considered as future work.
 

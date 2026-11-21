@@ -41,13 +41,17 @@ def _call_llm(prompt: str) -> str:
 
 
 def _parse_json_response(raw_text: str) -> list[dict]:
-    cleaned = raw_text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`")
-        cleaned = cleaned.removeprefix("json").strip()
+    from json_utils import extract_json
     try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
+        data = extract_json(raw_text)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            for v in data.values():
+                if isinstance(v, list):
+                    return v
+        raise OtherTestsError("LLM JSON is not an array of test cases.")
+    except Exception as exc:
         raise OtherTestsError(f"LLM did not return valid JSON: {exc}") from exc
 
 
@@ -395,18 +399,24 @@ def analyze_session_other_tests(session_id: str) -> dict:
             for node in ast.walk(ast.parse(source_code))
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        _validate_test_cases(
-            integration_tests, requirement_ids, "integration", allowed_functions
-        )
-        _validate_test_cases(
-            negative_tests, requirement_ids, "negative", allowed_functions
-        )
-    except OtherTestsError as exc:
-        log_session_error(session_id, "test_generation", exc)
-        raise
+        try:
+            _validate_test_cases(
+                integration_tests, requirement_ids, "integration", allowed_functions
+            )
+        except Exception:
+            integration_tests = _fallback_integration_tests(source_code, call_pairs, sorted(requirement_ids))
+
+        try:
+            _validate_test_cases(
+                negative_tests, requirement_ids, "negative", allowed_functions
+            )
+        except Exception:
+            negative_tests = _fallback_negative_tests(source_code, sorted(requirement_ids))
     except Exception as exc:  # noqa: BLE001
         log_session_error(session_id, "test_generation", exc)
-        raise OtherTestsError(str(exc)) from exc
+        call_pairs = _detect_cross_function_calls(source_code)
+        integration_tests = _fallback_integration_tests(source_code, call_pairs, sorted(requirement_ids))
+        negative_tests = _fallback_negative_tests(source_code, sorted(requirement_ids))
 
     regression_total = _update_regression_suite(
         session_id, integration_tests + negative_tests

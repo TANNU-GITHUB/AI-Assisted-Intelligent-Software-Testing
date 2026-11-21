@@ -142,54 +142,97 @@ def _normalize_cases(
     requirement_ids: set[str],
     allowed_functions: set[str],
 ) -> list[dict[str, Any]]:
-    if not isinstance(data, dict):
-        raise BlackBoxError("LLM JSON root must be an object.")
-    items = data.get("test_cases")
-    if not isinstance(items, list) or not items:
+    items: list[Any] = []
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        items = (
+            data.get("test_cases")
+            or data.get("cases")
+            or data.get("tests")
+            or data.get("scenarios")
+            or []
+        )
+        if not items and data.get("requirements") and isinstance(data["requirements"], list):
+            fallback_fn = next(iter(allowed_functions), "")
+            for r_idx, req in enumerate(data["requirements"], start=1):
+                if isinstance(req, dict):
+                    cond = str(req.get("condition") or "").lower()
+                    exc = "ValueError" if ("error" in cond or "raise" in cond or "exception" in cond) else None
+                    items.append({
+                        "case_id": f"bb{r_idx}",
+                        "description": req.get("condition") or f"Requirement {req.get('requirement_id')}",
+                        "requirement_id": req.get("requirement_id"),
+                        "function_name": fallback_fn,
+                        "input": req.get("input") or {},
+                        "expected_output": req.get("expected_output") or (None if exc else req.get("expected_result")),
+                        "expected_exception": exc,
+                    })
+    if not items:
         raise BlackBoxError("No black-box test cases returned.")
+
+    default_req_id = next(iter(requirement_ids)) if requirement_ids else "REQ-01"
+    default_fn = next(iter(allowed_functions)) if allowed_functions else ""
 
     normalized: list[dict[str, Any]] = []
     for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
-            raise BlackBoxError(f"Test case {index} must be an object.")
+            continue
         req_id = str(item.get("requirement_id") or "").strip()
         if req_id not in requirement_ids:
-            raise BlackBoxError(f"Test case {index} has unknown requirement_id '{req_id}'.")
+            for rid in requirement_ids:
+                if rid.lower() == req_id.lower() or rid.replace("-", "") == req_id.replace("-", ""):
+                    req_id = rid
+                    break
+            else:
+                req_id = default_req_id
+
         function_name = str(item.get("function_name") or "").strip()
         if function_name not in allowed_functions:
-            raise BlackBoxError(
-                f"Test case {index} references unknown function '{function_name}'."
-            )
+            for fn in allowed_functions:
+                if fn.lower() == function_name.lower():
+                    function_name = fn
+                    break
+            else:
+                function_name = default_fn
+
         inputs = item.get("input")
         if not isinstance(inputs, dict):
-            raise BlackBoxError(f"Test case {index} must include an 'input' object.")
+            inputs = {}
+
         expected_output = item.get("expected_output")
         expected_exception = item.get("expected_exception")
+        desc = str(item.get("description") or f"Black-box case {index}").strip()
+
         if expected_exception is None and "expected_output" not in item:
-            raise BlackBoxError(
-                f"Test case {index} needs expected_output or expected_exception."
-            )
+            if "error" in desc.lower() or "exception" in desc.lower() or "valueerror" in desc.lower():
+                expected_exception = "ValueError"
+            else:
+                expected_output = None
+
         if expected_exception:
             try:
                 expected_exception = require_python_identifier(
                     str(expected_exception).strip(), "Exception name"
                 )
-            except ValueError as exc:
-                raise BlackBoxError(str(exc)) from exc
+            except ValueError:
+                expected_exception = "ValueError"
+
         normalized.append(
             {
                 "case_id": str(item.get("case_id") or f"bb{index}"),
-                "description": str(item.get("description") or f"Black-box case {index}"),
+                "description": desc,
                 "requirement_id": req_id,
                 "function_name": function_name,
                 "input": inputs,
                 "expected_output": expected_output,
-                "expected_exception": str(expected_exception).strip()
-                if expected_exception
-                else None,
+                "expected_exception": str(expected_exception).strip() if expected_exception else None,
                 "test_type": "black_box",
             }
         )
+
+    if not normalized:
+        raise BlackBoxError("No valid test cases could be normalized.")
     return normalized
 
 

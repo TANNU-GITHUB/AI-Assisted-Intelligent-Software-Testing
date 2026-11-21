@@ -1,8 +1,13 @@
 import io
 
+import pytest
 from fastapi.testclient import TestClient
 
-from input_handler.documents import DocumentExtractError, extract_requirements_text
+from input_handler.documents import (
+    DocumentExtractError,
+    DocumentVisionError,
+    extract_requirements_text,
+)
 from tests.conftest import register_user
 
 
@@ -47,6 +52,161 @@ def test_extract_plain_text_and_reject_unknown():
         pass
 
 
+def _png_bytes(width: int = 180, height: int = 100) -> bytes:
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _pdf_with_figure(text: str) -> bytes:
+    import pymupdf as fitz
+
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), text)
+    page.insert_image(fitz.Rect(72, 120, 360, 280), stream=_png_bytes())
+    raw = document.tobytes()
+    document.close()
+    return raw
+
+
+def _scanned_pdf() -> bytes:
+    import pymupdf as fitz
+
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_image(page.rect, stream=_png_bytes(400, 520))
+    raw = document.tobytes()
+    document.close()
+    return raw
+
+
+def _vector_flowchart_pdf() -> bytes:
+    import pymupdf as fitz
+
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "Checkout")
+    shape = page.new_shape()
+    for top in range(120, 520, 40):
+        shape.draw_rect(fitz.Rect(72, top, 240, top + 28))
+        shape.draw_line(fitz.Point(156, top + 28), fitz.Point(156, top + 40))
+    shape.finish(color=(0, 0, 0), width=1)
+    shape.commit()
+    raw = document.tobytes()
+    document.close()
+    return raw
+
+
+def _many_page_pdf(page_count: int) -> bytes:
+    import pymupdf
+
+    document = pymupdf.open()
+    for _ in range(page_count):
+        document.new_page()
+    raw = document.tobytes()
+    document.close()
+    return raw
+
+
+def _many_visual_pages_pdf(page_count: int) -> bytes:
+    import pymupdf
+
+    document = pymupdf.open()
+    for _ in range(page_count):
+        page = document.new_page()
+        shape = page.new_shape()
+        for top in range(120, 240, 40):
+            shape.draw_rect(pymupdf.Rect(72, top, 240, top + 28))
+            shape.draw_line(
+                pymupdf.Point(156, top + 28), pymupdf.Point(156, top + 40)
+            )
+        shape.finish(color=(0, 0, 0), width=1)
+        shape.commit()
+    raw = document.tobytes()
+    document.close()
+    return raw
+
+
+def test_text_pdf_does_not_call_vision(monkeypatch):
+    def _fail(*_args, **_kwargs):
+        raise AssertionError("text PDF should not call the vision model")
+
+    monkeypatch.setattr(
+        "requirement_analysis.diagram_extractor.transcribe_visual_content", _fail
+    )
+    text = extract_requirements_text("spec.pdf", _pdf_bytes("Members receive a 10% discount."))
+    assert "Members receive" in text
+
+
+def test_pdf_figure_and_scan_use_vision(monkeypatch):
+    seen: list[str] = []
+
+    def _fake(image_bytes: bytes, mime_type: str) -> str:
+        assert image_bytes
+        assert mime_type.startswith("image/")
+        seen.append(mime_type)
+        return "If the member flag is set, then apply a 10 percent discount."
+
+    monkeypatch.setattr(
+        "requirement_analysis.diagram_extractor.transcribe_visual_content", _fake
+    )
+
+    prose = (
+        "Members receive a 10% discount when the loyalty flag is set. "
+        "Non-members pay the full listed price for every item in the cart."
+    )
+    mixed = extract_requirements_text("spec.pdf", _pdf_with_figure(prose))
+    assert "Members receive" in mixed
+    assert "member flag" in mixed
+
+    scanned = extract_requirements_text("scan.pdf", _scanned_pdf())
+    assert "member flag" in scanned
+
+    flowchart = extract_requirements_text("flow.pdf", _vector_flowchart_pdf())
+    assert "member flag" in flowchart
+    assert seen
+
+
+def test_word_upload_skips_vision(monkeypatch):
+    def _fail(*_args, **_kwargs):
+        raise AssertionError("Word extraction should stay on the text path")
+
+    monkeypatch.setattr(
+        "requirement_analysis.diagram_extractor.transcribe_visual_content", _fail
+    )
+    text = extract_requirements_text(
+        "spec.docx", _docx_bytes("Negative prices must be rejected.")
+    )
+    assert "Negative prices" in text
+
+
+def test_pdf_vision_failure_is_not_silently_ignored(monkeypatch):
+    def _fail(*_args, **_kwargs):
+        raise RuntimeError("vision endpoint unavailable")
+
+    monkeypatch.setattr(
+        "requirement_analysis.diagram_extractor.transcribe_visual_content", _fail
+    )
+    with pytest.raises(DocumentVisionError, match="visual content could not be analyzed"):
+        extract_requirements_text(
+            "spec.pdf",
+            _pdf_with_figure("Members receive a discount when eligible."),
+        )
+
+
+def test_pdf_page_and_visual_limits_are_reported():
+    from input_handler.pdf_visual import PdfVisualError, collect_pdf_visuals
+
+    with pytest.raises(DocumentExtractError, match="more than 50 pages"):
+        extract_requirements_text("large.pdf", _many_page_pdf(51))
+
+    with pytest.raises(PdfVisualError, match="more than 4 visually complex pages"):
+        collect_pdf_visuals(_many_visual_pages_pdf(5))
+
+
 def test_extract_endpoint(client: TestClient):
     headers = register_user(client)
     res = client.post(
@@ -62,3 +222,37 @@ def test_extract_endpoint(client: TestClient):
     )
     assert res.status_code == 200, res.text
     assert "Non-members pay" in res.json()["requirements_text"]
+
+
+def test_pdf_visual_failure_is_reported_as_upstream_error(client, monkeypatch):
+    def _fail(*_args, **_kwargs):
+        raise DocumentVisionError("Vision service unavailable.")
+
+    monkeypatch.setattr("app.extract_requirements_text", _fail)
+    response = client.post(
+        "/api/requirements/extract",
+        headers=register_user(client),
+        files={"requirements_file": ("flow.pdf", b"pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Vision service unavailable."
+
+
+def test_diagram_vision_failure_is_reported_as_upstream_error(
+    client, monkeypatch, caplog
+):
+    from requirement_analysis.diagram_extractor import DiagramExtractionError
+
+    def _fail(*_args, **_kwargs):
+        raise DiagramExtractionError("Vision service unavailable.")
+
+    monkeypatch.setattr("app.extract_requirements_from_diagram", _fail)
+    response = client.post(
+        "/api/requirements/extract-diagram",
+        files={"diagram_file": ("flow.png", b"image", "image/png")},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Vision service unavailable."
+    assert "Diagram requirements extraction failed: Vision service unavailable." in caplog.text
