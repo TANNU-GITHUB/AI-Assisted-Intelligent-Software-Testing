@@ -9,7 +9,7 @@ Return ONLY valid JSON (no markdown):
     {{
       "case_id": "case1",
       "description": "short label",
-      "input": {{ "param_name": value }},
+      "input": {{ "param_name": 100 }},
       "expected_output": null,
       "expected_exception": null
     }}

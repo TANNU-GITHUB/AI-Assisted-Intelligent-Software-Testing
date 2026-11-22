@@ -114,9 +114,9 @@ def _default_inputs_for_function(node: ast.FunctionDef) -> dict:
         elif "list" in lowered:
             inputs[arg.arg] = []
         elif "int" in lowered:
-            inputs[arg.arg] = 0
+            inputs[arg.arg] = 100
         elif "float" in lowered:
-            inputs[arg.arg] = 0.0
+            inputs[arg.arg] = 100.0
         elif "str" in lowered:
             inputs[arg.arg] = "x"
         else:

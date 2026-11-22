@@ -52,7 +52,7 @@ def _write_gap_pytest(session_id: str, cases: list[dict[str, Any]]) -> str:
             lines.append(f"    with pytest.raises({exception}):")
             lines.append(f"        {call}")
         elif "expected_output" in case and case.get("expected_output") is not None:
-            lines.append(f"    assert {call} == {json_expression(case['expected_output'])}")
+            lines.append(f"    _assert_match({call}, {json_expression(case['expected_output'])})")
         else:
             lines.append(f"    {call}")
         lines.append("")

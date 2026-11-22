@@ -123,6 +123,10 @@ def _normalize(data: Any) -> list[dict[str, str]]:
 
         if not condition or not expected:
             continue
+        if condition in {"...", "plain-language IF condition that can be checked"}:
+            continue
+        if expected in {"...", "plain-language THEN expected outcome"}:
+            continue
 
         req_id = str(item.get("requirement_id") or f"REQ-{index:02d}").strip()
         if not re.fullmatch(r"REQ-\d+", req_id, flags=re.IGNORECASE):
@@ -149,6 +153,28 @@ def _normalize(data: Any) -> list[dict[str, str]]:
 
 def _heuristic_requirements(requirements_text: str) -> list[dict[str, str]]:
     """Split requirements into structured rules when the LLM is unavailable."""
+    raw_lines = [line.strip() for line in requirements_text.splitlines() if line.strip()]
+    lines = [l for l in raw_lines if not l.lower().startswith("pdf page")]
+    if lines:
+        items: list[dict[str, str]] = []
+        for index, chunk in enumerate(lines[:24], start=1):
+            cond = chunk
+            exp = chunk
+            if " then " in chunk.lower():
+                parts = re.split(r"\s+then\s+", chunk, flags=re.IGNORECASE, maxsplit=1)
+                cond = parts[0].strip()
+                if cond.lower().startswith("if "):
+                    cond = cond[3:].strip()
+                exp = parts[1].strip()
+            items.append(
+                {
+                    "requirement_id": f"REQ-{index:02d}",
+                    "condition": cond,
+                    "expected_result": exp,
+                    "source_excerpt": chunk[:240],
+                }
+            )
+        return items
     chunks = [
         re.sub(r"\s+", " ", part).strip(" \t-•*")
         for part in re.split(r"[\n.;]+", requirements_text)

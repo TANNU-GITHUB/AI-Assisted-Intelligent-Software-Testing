@@ -12,6 +12,11 @@ from llm_client import generate_text, llm_is_configured
 from input_handler.handler import load_session, save_session, session_dir, session_locked
 from input_handler.session_logging import log_session_error
 from json_utils import extract_json as _extract_json
+from test_generation.black_box import (
+    _default_inputs_for_params,
+    _inputs_from_condition,
+    _is_bool_param,
+)
 from test_generation.prompts_white_box import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
 from test_generation.safe_codegen import (
     expected_exception_expression,
@@ -153,6 +158,7 @@ def _fallback_cases(
         case_id: str,
         description: str,
         inputs: dict[str, Any],
+        expected_exception: str | None = None,
     ) -> None:
         cases.append(
             {
@@ -160,68 +166,49 @@ def _fallback_cases(
                 "description": description,
                 "input": inputs,
                 "expected_output": None,
-                "expected_exception": None,
+                "expected_exception": expected_exception,
                 "test_type": "white_box",
                 "function_name": name,
-                "assert_output": False,
+                "assert_output": expected_exception is not None,
             }
         )
 
+    params_meta = function_meta.get("params", [])
     if not branches:
-        smoke_input = {}
-        for param in function_meta.get("params", []):
-            annotation = (param.get("annotation") or "").lower()
-            default = param.get("default")
-            if default is not None:
-                smoke_input[param["name"]] = ast.literal_eval(default)
-            elif "bool" in annotation:
-                smoke_input[param["name"]] = False
-            elif "list" in annotation:
-                smoke_input[param["name"]] = []
-            elif "int" in annotation:
-                smoke_input[param["name"]] = 0
-            elif "float" in annotation:
-                smoke_input[param["name"]] = 0.0
-            else:
-                smoke_input[param["name"]] = 0
+        smoke_input = _default_inputs_for_params(params_meta)
         add_case("smoke", "default smoke test", smoke_input)
         return cases
 
-    bool_params = [p for p in param_names if p.startswith("is_") or p.endswith("_flag")]
-    numeric_params = [
-        p
-        for p in param_names
-        if p not in bool_params and p not in {"prices", "items", "values"}
-    ]
-
     for branch_index, branch in enumerate(branches, start=1):
-        condition = (branch.get("condition") or "").lower()
-        inputs: dict[str, Any] = {}
-        for param in param_names:
-            if param in bool_params:
-                inputs[param] = True
-            elif param == "prices":
-                inputs[param] = [100.0, 50.0]
-            elif param in numeric_params:
-                inputs[param] = 100.0
-            else:
-                inputs[param] = []
+        condition = str(branch.get("condition") or "")
+        inputs = _inputs_from_condition(condition, params_meta)
 
-        if "< 0" in condition or "<0" in condition:
-            for param in numeric_params:
-                inputs[param] = -1.0
-        if "not " in condition and bool_params:
-            inputs[bool_params[0]] = False
-        elif bool_params and any(token in condition for token in bool_params):
-            for param in bool_params:
-                inputs[param] = param in condition and "not " not in condition
+        cond_low = condition.lower()
+        expected_exception = None
+        if (
+            "<= 0" in cond_low
+            or "<=0" in cond_low
+            or "< 0" in cond_low
+            or "<0" in cond_low
+            or "negative" in cond_low
+            or "raise" in cond_low
+            or "error" in cond_low
+            or "invalid" in cond_low
+        ):
+            expected_exception = "ValueError"
 
         add_case(
             f"branch{branch_index}",
             f"covers branch at line {branch.get('lineno')}",
             inputs,
+            expected_exception=expected_exception,
         )
 
+    bool_params = [
+        p["name"]
+        for p in params_meta
+        if _is_bool_param(p["name"], str(p.get("annotation") or ""), p.get("default"))
+    ]
     if bool_params and len({json.dumps(c["input"], sort_keys=True) for c in cases}) < 2:
         alt = dict(cases[0]["input"]) if cases else {p: True for p in bool_params}
         for param in bool_params:
@@ -286,7 +273,7 @@ def _write_pytest_file(
         else:
             expected = case.get("expected_output")
             call = function_call_expression(function_name, inputs)
-            lines.append(f"    assert {call} == {json_expression(expected)}")
+            lines.append(f"    _assert_match({call}, {json_expression(expected)})")
         lines.append("")
 
     content = "\n".join(lines)

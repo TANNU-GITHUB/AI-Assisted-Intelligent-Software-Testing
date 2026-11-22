@@ -15,7 +15,7 @@ SCHEMA_VERSION = "1.0"
 
 # Primary: NVIDIA NIM (OpenAI-compatible)
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "").strip()
-DEFAULT_NVIDIA_MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
+DEFAULT_NVIDIA_MODEL = "minimaxai/minimax-m3.1-flash"
 NVIDIA_MODEL = (
     os.getenv("NVIDIA_MODEL", DEFAULT_NVIDIA_MODEL).strip()
     or DEFAULT_NVIDIA_MODEL

@@ -77,50 +77,151 @@ def _public_api_catalog(payload: dict, source_code: str) -> list[dict[str, Any]]
     return _public_api_from_ast(source_code)
 
 
+def _is_bool_param(name: str, annotation: str = "", default: Any = None) -> bool:
+    anno = str(annotation or "").lower()
+    if "bool" in anno:
+        return True
+    if default is not None and str(default).lower() in {"true", "false"}:
+        return True
+    low = name.lower()
+    return (
+        low.startswith(("is_", "has_", "can_", "should_", "allow_", "enable_"))
+        or low.endswith(("_flag", "_allowed", "_enabled", "_valid", "_required"))
+        or low in {"active", "enabled", "valid"}
+    )
+
+
 def _default_inputs_for_params(params: list[dict[str, Any]]) -> dict[str, Any]:
     inputs: dict[str, Any] = {}
-    for param in params:
-        name = param.get("name")
+    for p in params:
+        name = p.get("name")
         if not name:
             continue
-        annotation = str(param.get("annotation") or "").lower()
-        if "bool" in annotation:
-            inputs[name] = False
-        elif "list" in annotation:
-            inputs[name] = []
-        elif "int" in annotation:
-            inputs[name] = 0
-        elif "float" in annotation:
-            inputs[name] = 0.0
-        elif "str" in annotation:
-            inputs[name] = "x"
+        anno = str(p.get("annotation") or "").lower()
+        dflt = p.get("default")
+        if _is_bool_param(name, anno, dflt):
+            inputs[name] = str(dflt).lower() == "true" if dflt is not None and str(dflt).lower() in {"true", "false"} else False
+        elif "list" in anno:
+            inputs[name] = [10, 20]
+        elif "str" in anno or "text" in anno:
+            inputs[name] = "standard"
+        elif "float" in anno or "double" in anno or "decimal" in anno:
+            inputs[name] = 100.0
+        elif "int" in anno:
+            inputs[name] = 100
         else:
-            inputs[name] = 0
+            inputs[name] = 100.0
     return inputs
 
 
 def _inputs_from_condition(condition: str, params: list[dict[str, Any]]) -> dict[str, Any]:
     inputs = _default_inputs_for_params(params)
-    lowered = condition.lower()
-    for key in list(inputs.keys()):
-        if key in lowered:
-            if isinstance(inputs[key], bool):
-                inputs[key] = "member" in lowered or "true" in lowered
-            elif isinstance(inputs[key], (int, float)) and "negative" in lowered:
-                inputs[key] = -1
-            elif isinstance(inputs[key], list) and "empty" in lowered:
-                inputs[key] = []
-    if "member" in lowered:
-        for key, value in inputs.items():
-            if isinstance(value, bool) and "member" in key.lower():
-                inputs[key] = True
-            elif isinstance(value, bool) and key in {"is_member", "member"}:
-                inputs[key] = True
-    for key in inputs:
-        if key == "is_member" and "member" in lowered and "non-member" not in lowered:
-            inputs[key] = "non-member" not in lowered
-        if key == "price" and isinstance(inputs[key], (int, float)):
-            inputs[key] = 100.0
+    cond = condition.strip()
+    low = cond.lower()
+
+    # 1. Parameter-specific evaluations
+    for p in params:
+        name = p.get("name")
+        if not name or name not in inputs:
+            continue
+        val = inputs[name]
+        anno = str(p.get("annotation") or "").lower()
+
+        if isinstance(val, bool):
+            if (
+                re.search(rf"\b{re.escape(name)}\s*(?:!=|is\s+not)\s*true\b", cond, re.IGNORECASE)
+                or re.search(rf"\b{re.escape(name)}\s*(?:==|is|=|:)?\s*false\b", cond, re.IGNORECASE)
+                or re.search(rf"\bnot\s+{re.escape(name)}\b", cond, re.IGNORECASE)
+                or re.search(rf"\bno[t\s]+{re.escape(name)}\b", cond, re.IGNORECASE)
+                or re.search(rf"\b{re.escape(name)}\s*!=\s*true\b", cond, re.IGNORECASE)
+                or re.search(rf"\bnon[-_ ]?{re.escape(name)}\b", cond, re.IGNORECASE)
+            ):
+                inputs[name] = False
+            elif (
+                re.search(rf"\b{re.escape(name)}\s*(?:==|is|=|:)?\s*true\b", cond, re.IGNORECASE)
+                or re.search(rf"\b{re.escape(name)}\s*(?:!=|is\s+not)\s*false\b", cond, re.IGNORECASE)
+                or re.search(rf"\b{re.escape(name)}\s*==\s*true\b", cond, re.IGNORECASE)
+                or re.search(rf"\bwith\s+{re.escape(name)}\b", cond, re.IGNORECASE)
+                or (re.search(rf"\b{re.escape(name)}\b", cond, re.IGNORECASE) and not re.search(rf"\bnot\s+{re.escape(name)}\b", cond, re.IGNORECASE))
+            ):
+                inputs[name] = True
+
+        elif isinstance(val, (int, float)):
+            is_float = isinstance(val, float) or "float" in anno
+            # A) Explicit value: name is 500, name = 500, name: 500, name == 500
+            direct = re.search(rf"\b{re.escape(name)}\s*(?:is|=|==|:|of|to|was)\s*(-?\d+(?:\.\d+)?)\b", cond, re.IGNORECASE)
+            if direct:
+                inputs[name] = float(direct.group(1)) if is_float or "." in direct.group(1) else int(direct.group(1))
+            else:
+                # B) Comparison to constant: name >= 90, name < 18, name <= 0
+                comp = re.search(rf"\b{re.escape(name)}\s*(>=|>|<=|<|==|!=)\s*(-?\d+(?:\.\d+)?)\b", cond, re.IGNORECASE)
+                if comp:
+                    op = comp.group(1)
+                    thresh = float(comp.group(2)) if is_float or "." in comp.group(2) else int(comp.group(2))
+                    step = 5.0 if is_float else 5
+                    if op == ">":
+                        val_res = thresh + step
+                    elif op == ">=":
+                        val_res = thresh + step
+                    elif op == "<":
+                        val_res = thresh - step
+                    elif op == "<=":
+                        val_res = thresh - step
+                    elif op == "==":
+                        val_res = thresh
+                    elif op == "!=":
+                        val_res = thresh + step
+                    inputs[name] = float(val_res) if is_float else int(val_res)
+                elif re.search(rf"\bnegative\s+{re.escape(name)}\b", cond, re.IGNORECASE) or (name.lower() in low and "negative" in low):
+                    inputs[name] = -100.0 if is_float else -100
+
+                # C) Modulo constraint: name % 100 == 0
+                mod = re.search(rf"\b{re.escape(name)}\s*%\s*(\d+)\s*(==|!=)\s*0\b", cond, re.IGNORECASE)
+                if mod:
+                    m_val = int(mod.group(1))
+                    m_op = mod.group(2)
+                    cur = inputs[name]
+                    if m_op == "==":
+                        cur = max(m_val, (int(cur) // m_val) * m_val)
+                    else:
+                        if int(cur) % m_val == 0:
+                            cur += m_val // 2 or 1
+                    inputs[name] = float(cur) if is_float else int(cur)
+
+        elif isinstance(val, str):
+            str_match = re.search(rf"\b{re.escape(name)}\s*(?:is|=|==|:|of)?\s*['\"]([^'\"]+)['\"]", cond, re.IGNORECASE)
+            if str_match:
+                inputs[name] = str_match.group(1)
+            elif "empty" in low and name.lower() in low:
+                inputs[name] = ""
+
+        elif isinstance(val, list):
+            list_match = re.search(rf"\b{re.escape(name)}\s*(?:is|=|==|:)?\s*(\[[^\]]*\])", cond)
+            if list_match:
+                try:
+                    inputs[name] = ast.literal_eval(list_match.group(1))
+                except Exception:
+                    pass
+            elif "empty" in low and name.lower() in low:
+                inputs[name] = []
+
+    # 2. Relational constraints between any pairs of numeric parameters: pA >= pB, pA < pB
+    num_params = [p["name"] for p in params if isinstance(inputs.get(p.get("name")), (int, float))]
+    for i, pA in enumerate(num_params):
+        for j, pB in enumerate(num_params):
+            if i == j:
+                continue
+            vA = inputs[pA]
+            vB = inputs[pB]
+            if re.search(rf"\b{re.escape(pA)}\s*(?:>=|>)\s*{re.escape(pB)}\b", low):
+                if vA <= vB:
+                    diff = 50.0 if isinstance(vA, float) else 50
+                    inputs[pA] = vB + diff
+            elif re.search(rf"\b{re.escape(pA)}\s*(?:<=|<)\s*{re.escape(pB)}\b", low):
+                if vA >= vB:
+                    diff = 50.0 if isinstance(vA, float) else 50
+                    inputs[pA] = max(0.0 if isinstance(vA, float) else 0, vB - diff)
+
     return inputs
 
 
@@ -287,9 +388,16 @@ def _fallback_cases(
         params = name_to_params.get(function_name, [])
         inputs = _inputs_from_condition(requirement["condition"], params)
         condition_lower = requirement["condition"].lower()
+        combined_lower = f"{requirement.get('condition', '')} {requirement.get('expected_result', '')}".lower()
         expected_exception = None
-        if "error" in condition_lower or "reject" in condition_lower:
-            expected_exception = "ValueError"
+        if any(w in combined_lower for w in ["valueerror", "raise", "exception"]) or (
+            ("error" in combined_lower or "reject" in combined_lower or "invalid" in combined_lower)
+            and "return" not in combined_lower
+        ) or ("<= 0" in condition_lower or "< 0" in condition_lower):
+            if "raise" in combined_lower or "valueerror" in combined_lower or "exception" in combined_lower or "invalid" in combined_lower or "<= 0" in condition_lower or "< 0" in condition_lower:
+                expected_exception = "ValueError"
+
+        if expected_exception:
             cases.append(
                 {
                     "case_id": f"bb-req-{index + 1}",
@@ -301,6 +409,7 @@ def _fallback_cases(
                     "expected_exception": expected_exception,
                     "test_type": "black_box",
                     "source": "heuristic-fallback",
+                    "assert_output": True,
                 }
             )
             continue
@@ -365,7 +474,7 @@ def _write_pytest_file(session_id: str, cases: list[dict[str, Any]]) -> str:
             lines.append(f"        {call}")
         else:
             expected = case.get("expected_output")
-            lines.append(f"    assert {call} == {json_expression(expected)}")
+            lines.append(f"    _assert_match({call}, {json_expression(expected)})")
         lines.append("")
 
     content = "\n".join(lines)
