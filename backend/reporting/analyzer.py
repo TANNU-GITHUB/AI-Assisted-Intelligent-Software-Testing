@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +14,77 @@ _TEMPLATES = Environment(
     loader=FileSystemLoader(_TEMPLATE_DIR),
     autoescape=select_autoescape(["html", "xml"]),
 )
+
+
+def _parse_error_details(error_message: str) -> dict:
+    """Extract exception type, value, and failing call line from pytest longrepr."""
+    if not error_message:
+        return {}
+
+    # Match lines like: "E   ValueError: -10"  or  "E   AssertionError: assert -10 == 5"
+    exc_match = re.search(
+        r"E\s+([\w]+(?:Error|Exception|Warning|Stop|Exit)?)\s*:\s*(.+)",
+        error_message,
+    )
+    exc_type = exc_match.group(1) if exc_match else None
+    exc_value = exc_match.group(2).strip() if exc_match else None
+
+    # Match the failing source line: ">   result = func(...)"
+    call_match = re.search(r">\s+(.+)", error_message)
+    failing_line = call_match.group(1).strip() if call_match else None
+
+    return {
+        "exception_type": exc_type,
+        "exception_value": exc_value,
+        "failing_line": failing_line,
+    }
+
+
+def _find_test_case_inputs(test_id: str, payload: dict) -> dict:
+    """Match a test_id node-id back to its generated test-case to retrieve input values."""
+    if not test_id:
+        return {}
+
+    # Determine which bucket to search
+    tid = test_id.lower()
+    if "white_box" in tid:
+        cases = (payload.get("white_box_tests") or {}).get("test_cases") or []
+    elif "black_box" in tid:
+        cases = (payload.get("black_box_tests") or {}).get("test_cases") or []
+    elif "integration" in tid:
+        cases = (payload.get("other_tests") or {}).get("integration_tests") or []
+    elif "negative" in tid:
+        cases = (payload.get("other_tests") or {}).get("negative_tests") or []
+    elif "gap_fill" in tid:
+        cases = (payload.get("gap_fill") or {}).get("extra_cases") or []
+    else:
+        cases = []
+
+    # Extract 1-based case number from the node id, e.g. "case3" → 3
+    case_num_match = re.search(r"case(\d+)", test_id, re.IGNORECASE)
+    if case_num_match:
+        idx = int(case_num_match.group(1)) - 1
+        if 0 <= idx < len(cases):
+            tc = cases[idx]
+            return {
+                "function_name": tc.get("function_name") or tc.get("caller") or "",
+                "input_values": tc.get("input") or {},
+                "expected_output": tc.get("expected_output"),
+                "expected_exception": tc.get("expected_exception"),
+            }
+
+    # Fallback: match by case_id field
+    for tc in cases:
+        cid = str(tc.get("case_id") or "")
+        if cid and cid in test_id:
+            return {
+                "function_name": tc.get("function_name") or tc.get("caller") or "",
+                "input_values": tc.get("input") or {},
+                "expected_output": tc.get("expected_output"),
+                "expected_exception": tc.get("expected_exception"),
+            }
+
+    return {}
 
 
 def build_report_data(payload: dict) -> dict:
@@ -73,7 +145,11 @@ def build_report_data(payload: dict) -> dict:
         "coverage_warnings": warnings,
         "coverage_note": coverage.get("function_coverage_note"),
         "defects": [
-            test
+            {
+                **test,
+                **_parse_error_details(test.get("error_message") or ""),
+                **_find_test_case_inputs(test.get("test_id") or "", payload),
+            }
             for test in tests
             if test.get("status") in {"failed", "error"} and not test.get("flaky")
         ],

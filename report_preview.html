@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Report - 1cf6ba541441</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; color: #18212b; background: #f3f5f7; }
+    body { margin: 0; padding: 28px; }
+    main { max-width: 1120px; margin: auto; }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    h2 { margin: 28px 0 10px; font-size: 18px; }
+    .meta, .muted { color: #586574; font-size: 13px; }
+    .summary { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 10px; margin-top: 22px; }
+    .metric { background: white; border: 1px solid #dce2e8; border-radius: 6px; padding: 14px; }
+    .metric strong { display: block; font-size: 22px; }
+    .metric span { color: #586574; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #dce2e8; }
+    th, td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid #e7ebef; font-size: 13px; }
+    th { background: #eaf0f4; font-weight: 600; }
+    .pass { color: #146c43; font-weight: 700; }
+    .fail { color: #b42318; font-weight: 700; }
+    .flaky { color: #8a4b08; font-weight: 700; }
+    .warning { padding: 10px 12px; margin: 8px 0; border-left: 3px solid #d97706; background: #fff7e6; color: #713f12; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; font: 12px/1.45 Consolas, monospace; }
+    .detail-block { margin-top: 8px; padding: 8px 10px; border-radius: 4px; font-size: 12px; }
+    .detail-inputs { background: #f0f4ff; border-left: 3px solid #4f46e5; }
+    .detail-exception { background: #fff0f0; border-left: 3px solid #b42318; }
+    .detail-line { background: #f5f5f5; border-left: 3px solid #64748b; }
+    .detail-block strong { display: block; margin-bottom: 4px; color: #374151; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+    .input-table { width: auto; border: none; margin: 0; }
+    .input-table td { padding: 2px 8px 2px 0; border: none; font-family: Consolas, monospace; font-size: 12px; }
+    .input-table td:first-child { color: #586574; font-weight: 600; }
+    code.exc { background: #fde8e8; color: #b42318; padding: 2px 5px; border-radius: 3px; font-size: 12px; }
+    code.line { background: #e9edf0; padding: 2px 5px; border-radius: 3px; font-size: 12px; }
+    @media (max-width: 700px) { body { padding: 14px; } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } table { display: block; overflow-x: auto; } }
+    @media print { body { padding: 0; background: white; } .metric, table { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Software Test Report</h1>
+  <div class="meta">Session 1cf6ba541441 · Generated 2026-11-23 13:39 UTC</div>
+
+  <section class="summary" aria-label="Test summary">
+    <div class="metric"><strong>9</strong><span>Total tests</span></div>
+    <div class="metric"><strong class="pass">8</strong><span>Passed</span></div>
+    <div class="metric"><strong class="fail">1</strong><span>Failed / errors</span></div>
+    <div class="metric"><strong>100.0</strong><span>Line coverage</span></div>
+    <div class="metric"><strong>0</strong><span>Flaky tests</span></div>
+  </section>
+
+  <h2>Requirement Traceability</h2>
+  
+  <table><thead><tr><th>Requirement</th><th>Test cases</th><th>Result</th></tr></thead><tbody>
+  
+    <tr><td><strong>REQ-01</strong><br>is_member is True</td>
+      <td><div>sessions/1cf6ba541441/tests/integration/test_integration.py::test_integration_checkout_total_case1[REQ-01]</div><div>sessions/1cf6ba541441/tests/negative/test_negative.py::test_negative_calculate_discount_case1[REQ-01]</div><div>sessions/1cf6ba541441/tests/negative/test_negative.py::test_negative_checkout_total_case2[REQ-01]</div><div>sessions/1cf6ba541441/tests/white_box/test_calculate_discount.py::test_white_box_calculate_discount_case1[REQ-01]</div><div>sessions/1cf6ba541441/tests/white_box/test_checkout_total.py::test_white_box_checkout_total_case1[REQ-01]</div></td>
+      <td><span class="fail">Fail</span></td></tr>
+  
+    <tr><td><strong>REQ-02</strong><br>is_member is False</td>
+      <td><div>sessions/1cf6ba541441/tests/white_box/test_calculate_discount.py::test_white_box_calculate_discount_case2[REQ-02]</div><div>sessions/1cf6ba541441/tests/white_box/test_checkout_total.py::test_white_box_checkout_total_case2[REQ-02]</div></td>
+      <td><span class="pass">Pass</span></td></tr>
+  
+    <tr><td><strong>REQ-03</strong><br>A unit price is negative</td>
+      <td><div>sessions/1cf6ba541441/tests/white_box/test_calculate_discount.py::test_white_box_calculate_discount_case3[REQ-03]</div><div>sessions/1cf6ba541441/tests/white_box/test_checkout_total.py::test_white_box_checkout_total_case3[REQ-03]</div></td>
+      <td><span class="pass">Pass</span></td></tr>
+  
+    <tr><td><strong>REQ-04</strong><br>The price list is empty</td>
+      <td><span class="muted">No generated test linked</span></td>
+      <td><span class="muted">Not tested</span></td></tr>
+  
+    <tr><td><strong>REQ-05</strong><br>The discounted subtotal is below 100</td>
+      <td><span class="muted">No generated test linked</span></td>
+      <td><span class="muted">Not tested</span></td></tr>
+  
+    <tr><td><strong>REQ-06</strong><br>The discounted subtotal is 100 or greater</td>
+      <td><span class="muted">No generated test linked</span></td>
+      <td><span class="muted">Not tested</span></td></tr>
+  
+    <tr><td><strong>REQ-07</strong><br>is_member is True AND the final total (after discounts and shipping) is over 500</td>
+      <td><span class="muted">No generated test linked</span></td>
+      <td><span class="muted">Not tested</span></td></tr>
+  
+    <tr><td><strong>REQ-08</strong><br>A quantity in line_total is negative</td>
+      <td><span class="muted">No generated test linked</span></td>
+      <td><span class="muted">Not tested</span></td></tr>
+  
+  </tbody></table>
+  
+
+  <h2>Function Coverage</h2>
+  
+  <table><thead><tr><th>Function</th><th>Line coverage</th><th>Branches</th><th>Coverage status</th></tr></thead><tbody>
+  
+    <tr><td>calculate_discount</td><td>100.0%</td><td>2/2</td><td><span class="pass">Covered</span></td></tr>
+  
+    <tr><td>checkout_total</td><td>100.0%</td><td>2/2</td><td><span class="pass">Covered</span></td></tr>
+  
+  </tbody></table>
+  
+  
+
+  <h2>Failed tests — why they failed</h2>
+  
+  <table><thead><tr><th>Test</th><th>Requirement</th><th>Failure detail</th><th>How to fix the code</th></tr></thead><tbody>
+  
+    <tr>
+      <td>
+        <strong>sessions/1cf6ba541441/tests/integration/test_integration.py::test_integration_checkout_total_case1[REQ-01]</strong>
+        <br><span class="muted">fn: checkout_total</span>
+      </td>
+      <td>REQ-01</td>
+      <td>
+        <span class="fail">failed</span>
+
+        
+        <div class="detail-block detail-inputs">
+          <strong>Input values</strong>
+          <table class="input-table">
+            
+            <tr><td>prices</td><td><code>[150.0, 200.0, 300.0]</code></td></tr>
+            
+            <tr><td>is_member</td><td><code>True</code></td></tr>
+            
+          </table>
+        </div>
+        
+
+        
+        <div class="detail-block detail-exception">
+          <strong>Exception raised</strong>
+          <code class="exc">AssertionError: assert 565.0 == 585.0</code>
+        </div>
+        
+
+        
+        <div class="detail-block detail-line">
+          <strong>Failing call</strong>
+          <code class="line">assert checkout_total(**{&#39;prices&#39;: [150.0, 200.0, 300.0], &#39;is_member&#39;: True}) == 585.0</code>
+        </div>
+        
+
+        
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;font-size:11px;color:#586574">Full traceback</summary>
+          <pre>_requirement_id = &#39;REQ-01&#39;
+
+    @pytest.mark.parametrize(&#39;_requirement_id&#39;, [&#39;REQ-01&#39;], ids=[&#39;REQ-01&#39;])
+    def test_integration_checkout_total_case1(_requirement_id):
+&gt;       assert checkout_total(**{&#39;prices&#39;: [150.0, 200.0, 300.0], &#39;is_member&#39;: True}) == 585.0
+E       AssertionError: assert 565.0 == 585.0
+E        +  where 565.0 = checkout_total(**{&#39;prices&#39;: [150.0, 200.0, 300.0], &#39;is_member&#39;: True})
+
+tests\integration\test_integration.py:11: AssertionError</pre>
+        </details>
+        
+      </td>
+      <td>Update source.py so this input matches the requirement, then re-run.</td>
+    </tr>
+  
+  </tbody></table>
+  
+
+  <h2>Requirement file coverage</h2>
+  <p class="muted">No requirement coverage is available.</p>
+
+  <h2>Uncovered source lines</h2>
+  <p class="pass">All measured source lines were executed.</p>
+</main>
+</body>
+</html>

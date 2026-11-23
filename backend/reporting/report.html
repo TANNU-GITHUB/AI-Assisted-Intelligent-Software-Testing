@@ -23,6 +23,16 @@
     .flaky { color: #8a4b08; font-weight: 700; }
     .warning { padding: 10px 12px; margin: 8px 0; border-left: 3px solid #d97706; background: #fff7e6; color: #713f12; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; font: 12px/1.45 Consolas, monospace; }
+    .detail-block { margin-top: 8px; padding: 8px 10px; border-radius: 4px; font-size: 12px; }
+    .detail-inputs { background: #f0f4ff; border-left: 3px solid #4f46e5; }
+    .detail-exception { background: #fff0f0; border-left: 3px solid #b42318; }
+    .detail-line { background: #f5f5f5; border-left: 3px solid #64748b; }
+    .detail-block strong { display: block; margin-bottom: 4px; color: #374151; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+    .input-table { width: auto; border: none; margin: 0; }
+    .input-table td { padding: 2px 8px 2px 0; border: none; font-family: Consolas, monospace; font-size: 12px; }
+    .input-table td:first-child { color: #586574; font-weight: 600; }
+    code.exc { background: #fde8e8; color: #b42318; padding: 2px 5px; border-radius: 3px; font-size: 12px; }
+    code.line { background: #e9edf0; padding: 2px 5px; border-radius: 3px; font-size: 12px; }
     @media (max-width: 700px) { body { padding: 14px; } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } table { display: block; overflow-x: auto; } }
     @media print { body { padding: 0; background: white; } .metric, table { break-inside: avoid; } }
   </style>
@@ -63,12 +73,49 @@
 
   <h2>Failed tests — why they failed</h2>
   {% if defects %}
-  <table><thead><tr><th>Test</th><th>Requirement</th><th>Why it failed</th><th>How to fix the code</th></tr></thead><tbody>
+  <table><thead><tr><th>Test</th><th>Requirement</th><th>Failure detail</th><th>How to fix the code</th></tr></thead><tbody>
   {% for test in defects %}
     <tr>
-      <td>{{ test.test_id }}</td>
+      <td>
+        <strong>{{ test.test_id }}</strong>
+        {% if test.function_name %}<br><span class="muted">fn: {{ test.function_name }}</span>{% endif %}
+      </td>
       <td>{{ test.requirement_id or "Unlinked" }}{% if test.requirement_condition %}<br><span class="muted">{{ test.requirement_condition }}</span>{% endif %}</td>
-      <td class="fail">{{ test.why_failed or test.status }}<pre>{{ test.error_message or "" }}</pre></td>
+      <td>
+        <span class="fail">{{ test.why_failed or test.status }}</span>
+
+        {% if test.input_values %}
+        <div class="detail-block detail-inputs">
+          <strong>Input values</strong>
+          <table class="input-table">
+            {% for k, v in test.input_values.items() %}
+            <tr><td>{{ k }}</td><td><code>{{ v }}</code></td></tr>
+            {% endfor %}
+          </table>
+        </div>
+        {% endif %}
+
+        {% if test.exception_type %}
+        <div class="detail-block detail-exception">
+          <strong>Exception raised</strong>
+          <code class="exc">{{ test.exception_type }}: {{ test.exception_value }}</code>
+        </div>
+        {% endif %}
+
+        {% if test.failing_line %}
+        <div class="detail-block detail-line">
+          <strong>Failing call</strong>
+          <code class="line">{{ test.failing_line }}</code>
+        </div>
+        {% endif %}
+
+        {% if test.error_message %}
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;font-size:11px;color:#586574">Full traceback</summary>
+          <pre>{{ test.error_message }}</pre>
+        </details>
+        {% endif %}
+      </td>
       <td>{{ test.how_to_fix or "Update source.py so this input matches the requirement, then re-run." }}</td>
     </tr>
   {% endfor %}
