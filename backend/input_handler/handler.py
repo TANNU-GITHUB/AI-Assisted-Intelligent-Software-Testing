@@ -14,6 +14,7 @@ from typing import Callable, Concatenate, ParamSpec, TypeVar
 
 from filelock import FileLock
 
+from agents.source_flatten import fit_python_source
 from config import SCHEMA_VERSION, SESSIONS_DIR
 
 
@@ -143,6 +144,10 @@ def _validate_requirements(requirements_text: str) -> None:
         raise InputValidationError("Requirements text cannot be empty.")
 
 
+MAX_SOURCE_CHARS = 350_000
+MAX_REQUIREMENTS_CHARS = 50_000
+
+
 def create_session(
     *,
     source_code: str,
@@ -151,6 +156,13 @@ def create_session(
     owner_user_id: str | None = None,
 ) -> dict:
     """Validate inputs, write session files, and return the shared JSON payload."""
+    if len(source_code) > MAX_SOURCE_CHARS:
+        source_code = fit_python_source(source_code, MAX_SOURCE_CHARS)
+    if len(requirements_text) > MAX_REQUIREMENTS_CHARS:
+        requirements_text = (
+            requirements_text[:MAX_REQUIREMENTS_CHARS]
+            + "\n# ... (requirements truncated at 50,000 characters) ...\n"
+        )
     _validate_source(original_filename, source_code)
     _validate_requirements(requirements_text)
 
@@ -192,6 +204,8 @@ def create_session(
 
 @session_locked
 def update_session_source(session_id: str, source_code: str) -> dict:
+    if len(source_code) > MAX_SOURCE_CHARS:
+        source_code = fit_python_source(source_code, MAX_SOURCE_CHARS)
     payload = load_session(session_id)
     original_filename = (payload.get("inputs") or {}).get("original_filename", "source.py")
     _validate_source(original_filename, source_code)

@@ -1,6 +1,3 @@
-"""Small checkout example for testing source, document, and flowchart uploads."""
-
-
 def checkout_total(
     subtotal: float,
     is_member: bool,

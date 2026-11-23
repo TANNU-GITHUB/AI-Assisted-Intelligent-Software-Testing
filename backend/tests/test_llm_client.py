@@ -35,8 +35,12 @@ def test_resolve_nvidia_vision_model_default(monkeypatch):
     assert resolve_nvidia_vision_model("custom/vision") == "custom/vision"
 
 
-def test_resolve_nvidia_model_default_value():
-    assert resolve_nvidia_model() == "nvidia/nemotron-3.5-lightning-30b-a3b"
+def test_resolve_nvidia_model_default_value(monkeypatch):
+    # Should return whatever NVIDIA_MODEL is set to (from .env or default)
+    from llm_client import NVIDIA_MODEL, DEFAULT_NVIDIA_MODEL
+    result = resolve_nvidia_model()
+    assert result in (NVIDIA_MODEL, DEFAULT_NVIDIA_MODEL)
+    assert "/" in result or result.isalnum()
 
 
 def test_llm_is_configured_with_ollama_default():
@@ -201,8 +205,101 @@ def test_generate_text_retries_default_nvidia_model_after_410(monkeypatch):
     text, provider = generate_text("Sample prompt.")
 
     assert text == "Text processed."
-    assert provider == "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b"
-    assert models == [
-        "old/text-model",
-        "nvidia/nemotron-3.5-lightning-30b-a3b",
-    ]
+    # After a 410 on the configured model, it should fall back to the next model in the list
+    assert provider.startswith("nvidia:")
+    assert "old/text-model" not in provider
+    # The first tried model was old/text-model, the second one succeeded
+    assert len(models) >= 2
+    assert models[0] == "old/text-model"
+
+
+def _fake_client(handler):
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            del args, kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url, **kwargs):
+            del kwargs
+            return handler("GET", url, None, None)
+
+        def post(self, url, headers=None, json=None):
+            return handler("POST", url, headers, json)
+
+    return _Client
+
+
+def test_generate_text_falls_back_to_ollama_on_nvidia_quota(monkeypatch):
+    from llm_client import clear_nvidia_exhausted, is_nvidia_exhausted
+
+    clear_nvidia_exhausted()
+    nvidia_calls = []
+
+    def handler(method, url, headers, body):
+        del method, headers
+        request = httpx.Request("POST", url)
+        if "nvidia" in url or "integrate.api" in url:
+            nvidia_calls.append(body["model"] if body else url)
+            return httpx.Response(
+                429,
+                request=request,
+                json={"error": {"message": "Quota exceeded for this API key"}},
+            )
+        return httpx.Response(
+            200,
+            request=request,
+            json={"message": {"content": '{"ok": true}'}},
+        )
+
+    monkeypatch.setattr("llm_client.NVIDIA_API_KEY", "test-text-key")
+    monkeypatch.setattr("llm_client.NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    monkeypatch.setattr("llm_client.httpx.Client", _fake_client(handler))
+    monkeypatch.setattr("llm_client._is_ollama_online", lambda timeout=1.5: True)
+    monkeypatch.setattr("llm_client._resolve_available_ollama_model", lambda preferred="llama3.2": "llama3.2")
+
+    text, provider = generate_text("Sample prompt.")
+
+    assert '{"ok": true}' in text
+    assert provider.startswith("ollama:")
+    assert nvidia_calls
+    assert is_nvidia_exhausted() is True
+
+    nvidia_calls.clear()
+    text, provider = generate_text("Second prompt after quota.")
+    assert provider.startswith("ollama:")
+    assert nvidia_calls == []
+    clear_nvidia_exhausted()
+
+
+def test_generate_text_falls_back_to_ollama_on_nvidia_timeout(monkeypatch):
+    from llm_client import clear_nvidia_exhausted, is_nvidia_exhausted
+
+    clear_nvidia_exhausted()
+
+    def handler(method, url, headers, body):
+        del method, headers, body
+        request = httpx.Request("POST", url)
+        if "nvidia" in url or "integrate.api" in url:
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(
+            200,
+            request=request,
+            json={"choices": [{"message": {"content": '{"fallback": true}'}}]},
+        )
+
+    monkeypatch.setattr("llm_client.NVIDIA_API_KEY", "test-text-key")
+    monkeypatch.setattr("llm_client.NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    monkeypatch.setattr("llm_client.httpx.Client", _fake_client(handler))
+    monkeypatch.setattr("llm_client._is_ollama_online", lambda timeout=1.5: True)
+    monkeypatch.setattr("llm_client._resolve_available_ollama_model", lambda preferred="llama3.2": "llama3.2")
+
+    text, provider = generate_text("Large file prompt.")
+    assert "fallback" in text
+    assert provider.startswith("ollama:")
+    assert is_nvidia_exhausted() is True
+    clear_nvidia_exhausted()

@@ -183,6 +183,10 @@ def analyze_source(source_code: str) -> dict[str, Any]:
         raise CodeAnalysisError(
             f"Python syntax error on line {exc.lineno}: {exc.msg}"
         ) from exc
+    except RecursionError as exc:
+        raise CodeAnalysisError(
+            "Source file is too deeply nested to analyze. Split it into smaller modules."
+        ) from exc
 
     functions: list[dict[str, Any]] = []
 

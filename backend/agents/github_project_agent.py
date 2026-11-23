@@ -8,6 +8,7 @@ from typing import Any, Callable
 from agents.source_flatten import (
     combine_requirement_docs,
     fallback_requirements_from_functions,
+    fit_python_source,
     flatten_python_modules,
     is_python_source,
     is_requirement_doc,
@@ -23,8 +24,8 @@ from test_generation.gap_fill import analyze_session_gap_fill
 from test_generation.other_tests import analyze_session_other_tests
 from test_generation.white_box import analyze_session_white_box
 
-MAX_PYTHON_FILES = 40
-MAX_DOC_FILES = 12
+MAX_PYTHON_FILES = 80
+MAX_DOC_FILES = 20  # increased to catch more spec files
 MAX_BLOB_BYTES = 400_000
 
 
@@ -36,12 +37,8 @@ def _repo_meta(token: str, owner: str, repo: str) -> dict[str, Any]:
     return github_request(token, f"/repos/{owner}/{repo}")
 
 
-def _tree_blobs(token: str, owner: str, repo: str, branch: str) -> list[dict[str, Any]]:
+def _tree_blobs(token: str, owner: str, repo: str, branch: str) -> tuple[list[dict[str, Any]], bool]:
     payload = github_request(token, f"/repos/{owner}/{repo}/git/trees/{branch}", {"recursive": "1"})
-    if payload.get("truncated"):
-        raise GitHubProjectAgentError(
-            "Repository tree is too large to load in one request. Test a smaller repo or a subfolder."
-        )
     blobs = []
     for item in payload.get("tree") or []:
         if not isinstance(item, dict) or item.get("type") != "blob":
@@ -51,7 +48,7 @@ def _tree_blobs(token: str, owner: str, repo: str, branch: str) -> list[dict[str
             continue
         size = int(item.get("size") or 0)
         blobs.append({"path": path, "size": size})
-    return blobs
+    return blobs, bool(payload.get("truncated"))
 
 
 def _download(token: str, owner: str, repo: str, path: str) -> str:
@@ -70,13 +67,16 @@ def collect_project_files(
     try:
         meta = _repo_meta(token, owner, repo)
         branch = str(meta.get("default_branch") or "main")
-        blobs = _tree_blobs(token, owner, repo, branch)
+        blobs, truncated_tree = _tree_blobs(token, owner, repo, branch)
     except GitHubOAuthError as exc:
         raise GitHubProjectAgentError(str(exc)) from exc
 
     python_blobs = [item for item in blobs if is_python_source(item["path"])]
     doc_blobs = [item for item in blobs if is_requirement_doc(item["path"])]
     python_blobs.sort(key=lambda item: (item["size"], item["path"]))
+    # Sort doc blobs: spec/openapi files first (smaller paths usually means root), README last
+    from agents.source_flatten import _spec_priority
+    doc_blobs.sort(key=lambda item: (_spec_priority(item["path"]), item["path"]))
     selected_py = python_blobs[:MAX_PYTHON_FILES]
     selected_docs = doc_blobs[:MAX_DOC_FILES]
 
@@ -103,11 +103,21 @@ def collect_project_files(
         if is_requirement_doc(item["path"], text):
             doc_files.append((item["path"], text))
 
-    flat = flatten_python_modules(py_files)
+    from input_handler.handler import MAX_SOURCE_CHARS
+
+    flat = flatten_python_modules(py_files, max_chars=MAX_SOURCE_CHARS)
+    flat["source_code"] = fit_python_source(flat["source_code"], MAX_SOURCE_CHARS)
     requirements = combine_requirement_docs(doc_files)
     if not requirements.strip():
         requirements = fallback_requirements_from_functions(flat["included"])
+    if truncated_tree:
+        errors.append(
+            "GitHub returned a truncated repository tree; remaining files were still analyzed from the loaded subset."
+        )
 
+    included_paths = [
+        item["path"] for item in flat["included"] if item.get("path") and item["path"] != "(generated)"
+    ]
     return {
         "owner": owner,
         "repo": repo,
@@ -115,7 +125,7 @@ def collect_project_files(
         "default_branch": branch,
         "tree_file_count": len(blobs),
         "python_file_count": len(python_blobs),
-        "python_files_tested": [path for path, _text in py_files],
+        "python_files_tested": included_paths or [path for path, _text in py_files],
         "requirement_files": [path for path, _text in doc_files],
         "truncated_python": max(0, len(python_blobs) - len(selected_py)),
         "flatten": flat,
@@ -139,14 +149,26 @@ def run_github_project_agent(
     repo: str,
     owner_user_id: str,
 ) -> dict[str, Any]:
-    collected = collect_project_files(token, owner, repo)
+    try:
+        collected = collect_project_files(token, owner, repo)
+    except GitHubProjectAgentError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise GitHubProjectAgentError(
+            f"Failed to collect project files from {owner}/{repo}: {exc}"
+        ) from exc
+
     flat = collected["flatten"]
-    session = create_session(
-        source_code=flat["source_code"],
-        requirements_text=collected["requirements_text"],
-        original_filename=f"{repo}_combined.py",
-        owner_user_id=owner_user_id,
-    )
+    try:
+        session = create_session(
+            source_code=flat["source_code"],
+            requirements_text=collected["requirements_text"],
+            original_filename=f"{repo}_combined.py",
+            owner_user_id=owner_user_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise GitHubProjectAgentError(f"Failed to create analysis session: {exc}") from exc
+
     session_id = session["session_id"]
     folder = session_dir(session_id)
     project_dir = folder / "project"

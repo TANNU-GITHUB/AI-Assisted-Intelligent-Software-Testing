@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from config import NVIDIA_API_KEY, NVIDIA_MODEL
-from llm_client import generate_text, llm_is_configured
+from llm_client import generate_text
 from input_handler.handler import load_session, save_session, session_dir, session_locked
 from input_handler.session_logging import log_session_error
 from test_generation.safe_codegen import (
@@ -32,12 +32,19 @@ class OtherTestsError(Exception):
 
 
 def _call_llm(prompt: str) -> str:
-    if not llm_is_configured():
+    """Call the LLM, falling back to Ollama when NVIDIA is exhausted/unavailable.
+
+    Raises OtherTestsError (never LLMError directly) so callers always see a
+    domain error that the route handler maps to HTTP 400 instead of 500.
+    """
+    try:
+        text, _model = generate_text(prompt, api_key=NVIDIA_API_KEY, model_name=NVIDIA_MODEL)
+        return text
+    except Exception as exc:  # noqa: BLE001
         raise OtherTestsError(
-            "No LLM configured — set NVIDIA_API_KEY in backend/.env or run Ollama locally."
-        )
-    text, _model = generate_text(prompt, api_key=NVIDIA_API_KEY, model_name=NVIDIA_MODEL)
-    return text
+            f"LLM unavailable — {exc}. "
+            "Install Ollama (https://ollama.com) and run: ollama pull llama3.2"
+        ) from exc
 
 
 def _parse_json_response(raw_text: str) -> list[dict]:
@@ -80,18 +87,24 @@ def _generate_integration_tests(
     if not call_pairs:
         return []
 
+    capped_pairs = call_pairs[:20]
+    truncated_source = (
+        source_code
+        if len(source_code) <= 6000
+        else (source_code[:6000] + "\n# ... (truncated for context) ...")
+    )
     prompt = f"""You are generating integration test cases for the Python code below.
 For each function-call pair, create ONE test case verifying the caller and
 callee work correctly together (realistic input, expected output).
 
 Function call pairs:
-{json.dumps(call_pairs, indent=2)}
+{json.dumps(capped_pairs, indent=2)}
 
 Valid requirement IDs (assign exactly one to every test case):
 {json.dumps(requirement_ids)}
 
 Source code:
-{source_code}
+{truncated_source}
 
 Return ONLY a JSON array, no markdown, no explanation. Each item:
 {{"caller": "...", "callee": "...", "input": {{...}}, "expected_output": ..., "test_type": "integration", "requirement_id": "REQ-01"}}
@@ -179,13 +192,18 @@ def _fallback_negative_tests(source_code: str, requirement_ids: list[str]) -> li
 
 
 def _generate_negative_tests(source_code: str, requirement_ids: list[str]) -> list[dict]:
+    truncated_source = (
+        source_code
+        if len(source_code) <= 6000
+        else (source_code[:6000] + "\n# ... (truncated for context) ...")
+    )
     prompt = f"""You are generating negative test cases for the Python code below.
 For each function, produce test cases using invalid, missing, or malformed
 inputs (wrong type, None, empty string, out-of-range values) and specify the
 expected exception.
 
 Source code:
-{source_code}
+{truncated_source}
 
 Valid requirement IDs (assign exactly one to every test case):
 {json.dumps(requirement_ids)}
@@ -328,12 +346,15 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
         func_name = case.get("function_name") or case.get("caller") or "target"
         try:
             func_name = require_python_identifier(func_name, "Function name")
-        except ValueError as exc:
-            raise OtherTestsError(str(exc)) from exc
+        except ValueError:
+            continue
         test_name = f"test_{test_type}_case{i}"
-        requirement_id = case["requirement_id"]
+        requirement_id = case.get("requirement_id") or "REQ-01"
         input_kwargs = case.get("input", {}) or {}
-        call = function_call_expression(func_name, input_kwargs)
+        try:
+            call = function_call_expression(func_name, input_kwargs)
+        except Exception:
+            continue
 
         lines.append(
             f"@pytest.mark.parametrize('_requirement_id', [{requirement_id!r}], "
@@ -341,7 +362,10 @@ def _write_pytest_file(session_id: str, test_type: str, cases: list[dict]) -> st
         )
         if test_type == "negative":
             expected_exc = case.get("expected_exception", "Exception")
-            exception = expected_exception_expression(expected_exc)
+            try:
+                exception = expected_exception_expression(expected_exc)
+            except Exception:
+                exception = "_resolve_exception('Exception')"
             lines.append(f"def {test_name}(_requirement_id):")
             lines.append(f"    with pytest.raises({exception}):")
             lines.append(f"        {call}")

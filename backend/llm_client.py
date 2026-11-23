@@ -1,4 +1,11 @@
-"""LLM client: NVIDIA NIM (primary) with local Ollama fallback."""
+"""LLM client: NVIDIA NIM (primary) with local Ollama fallback.
+
+Fallback order: NVIDIA NIM → Ollama (if running) → LLMError
+When neither is reachable, callers receive a clear LLMError rather than a
+raw 500. All public functions are safe to call even when both providers are
+offline — they raise LLMError, which is caught by the FastAPI exception
+handler and surfaced as HTTP 503.
+"""
 
 from __future__ import annotations
 
@@ -30,10 +37,41 @@ PLACEHOLDER_KEYS = frozenset(
 )
 
 HTTP_TIMEOUT = 90.0
-CONNECT_TIMEOUT = 5.0
+NVIDIA_HTTP_TIMEOUT = 20.0
+OLLAMA_HTTP_TIMEOUT = 45.0
+CONNECT_TIMEOUT = 3.0
+NVIDIA_PROMPT_CHARS = 16_000
+OLLAMA_PROMPT_CHARS = 6_000
+NVIDIA_QUOTA_COOLDOWN = 1800.0
+NVIDIA_TRANSIENT_COOLDOWN = 180.0
+
+_EXHAUSTED_STATUS_CODES = frozenset({401, 402, 403, 429})
+_EXHAUSTED_MARKERS = (
+    "quota",
+    "rate limit",
+    "rate_limit",
+    "ratelimit",
+    "too many requests",
+    "insufficient_quota",
+    "insufficient credit",
+    "out of credit",
+    "out of credits",
+    "billing",
+    "resource has been exhausted",
+    "exceeded your current quota",
+    "credit balance",
+)
+_CONTEXT_MARKERS = (
+    "context length",
+    "maximum context",
+    "too many tokens",
+    "prompt is too long",
+    "context window",
+    "max context",
+)
 
 
-def _is_ollama_online(timeout: float = 0.5) -> bool:
+def _is_ollama_online(timeout: float = 1.5) -> bool:
     import socket
     import urllib.parse
     try:
@@ -44,6 +82,35 @@ def _is_ollama_online(timeout: float = 0.5) -> bool:
             return True
     except OSError:
         return False
+
+
+def _resolve_available_ollama_model(preferred: str = "llama3.2:1b") -> str:
+    try:
+        base = OLLAMA_BASE_URL.rstrip("/")
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.get(f"{base}/api/tags")
+            if resp.status_code == 200:
+                models = [m.get("name", "") for m in resp.json().get("models", [])]
+                # Exact match first
+                if preferred in models:
+                    return preferred
+                # If :tag omitted or matches with tag
+                for m in models:
+                    if m == preferred or m.startswith(f"{preferred}:"):
+                        return m
+                # Substring match
+                for m in models:
+                    if preferred in m or m.startswith(preferred):
+                        return m
+                # If preferred was llama3.2:1b but llama3.2:latest is present, or vice-versa
+                for m in models:
+                    if "llama3.2" in m:
+                        return m
+                if models:
+                    return models[0]
+    except Exception:
+        pass
+    return preferred
 
 
 class LLMError(RuntimeError):
@@ -80,6 +147,47 @@ def _json_hint(prompt: str, response_mime_type: str) -> str:
     )
 
 
+def _clip_prompt(prompt: str, max_chars: int) -> str:
+    if max_chars <= 0 or len(prompt) <= max_chars:
+        return prompt
+    keep = max(256, (max_chars - 40) // 2)
+    return f"{prompt[:keep]}\n\n# ... (truncated for model context) ...\n\n{prompt[-keep:]}"
+
+
+def _http_error_body(exc: httpx.HTTPStatusError) -> str:
+    try:
+        return (exc.response.text or "")[:800]
+    except Exception:
+        return ""
+
+
+def _combined_error_text(exc: BaseException) -> str:
+    body = _http_error_body(exc) if isinstance(exc, httpx.HTTPStatusError) else ""
+    return f"{exc} {body}".lower()
+
+
+def _is_nvidia_quota_error(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in _EXHAUSTED_STATUS_CODES:
+        return True
+    text = _combined_error_text(exc)
+    return any(marker in text for marker in _EXHAUSTED_MARKERS)
+
+
+def _is_nvidia_context_error(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {413, 422}:
+        return True
+    text = _combined_error_text(exc)
+    return any(marker in text for marker in _CONTEXT_MARKERS)
+
+
+def _is_nvidia_unavailable(exc: BaseException) -> bool:
+    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {500, 502, 503, 504}:
+        return True
+    return False
+
+
 def _extract_openai_content(payload: dict[str, Any]) -> str:
     choices = payload.get("choices") or []
     if not choices:
@@ -114,16 +222,19 @@ def _nvidia_chat(
     api_key: str,
     model: str,
     temperature: float,
+    max_chars: int = NVIDIA_PROMPT_CHARS,
 ) -> str:
     url = f"{NVIDIA_BASE_URL.rstrip('/')}/chat/completions"
+    clipped = _clip_prompt(prompt, max_chars)
     body = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": clipped}],
         "temperature": temperature,
         "max_tokens": 2048,
         "stream": False,
     }
-    with httpx.Client(timeout=httpx.Timeout(HTTP_TIMEOUT, connect=CONNECT_TIMEOUT)) as client:
+    timeout = httpx.Timeout(NVIDIA_HTTP_TIMEOUT, connect=CONNECT_TIMEOUT)
+    with httpx.Client(timeout=timeout) as client:
         response = client.post(
             url,
             headers={
@@ -136,39 +247,69 @@ def _nvidia_chat(
         return _extract_openai_content(response.json())
 
 
-def _ollama_chat(prompt: str, *, model: str, temperature: float) -> str:
+_NVIDIA_EXHAUSTED_UNTIL = 0.0
+
+
+def mark_nvidia_exhausted(duration_seconds: float = NVIDIA_QUOTA_COOLDOWN) -> None:
+    global _NVIDIA_EXHAUSTED_UNTIL
+    _NVIDIA_EXHAUSTED_UNTIL = time.time() + max(duration_seconds, 1.0)
+
+
+def clear_nvidia_exhausted() -> None:
+    global _NVIDIA_EXHAUSTED_UNTIL
+    _NVIDIA_EXHAUSTED_UNTIL = 0.0
+
+
+def is_nvidia_exhausted() -> bool:
+    return time.time() < _NVIDIA_EXHAUSTED_UNTIL
+
+
+def _ollama_chat(
+    prompt: str,
+    *,
+    model: str,
+    temperature: float,
+    want_json: bool = True,
+    max_chars: int = OLLAMA_PROMPT_CHARS,
+) -> str:
     base = OLLAMA_BASE_URL.rstrip("/")
-    openai_url = f"{base}/v1/chat/completions"
-    body = {
+    clipped = _clip_prompt(prompt, max_chars)
+    timeout = httpx.Timeout(OLLAMA_HTTP_TIMEOUT, connect=CONNECT_TIMEOUT)
+    native_url = f"{base}/api/chat"
+    native_body: dict[str, Any] = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": temperature,
+        "messages": [{"role": "user", "content": clipped}],
         "stream": False,
+        "options": {"temperature": temperature, "num_predict": 2048},
     }
-    with httpx.Client(timeout=httpx.Timeout(HTTP_TIMEOUT, connect=CONNECT_TIMEOUT)) as client:
+    # Strict JSON mode is unreliable on small local models with large prompts.
+    if want_json and len(clipped) < 4000:
+        native_body["format"] = "json"
+
+    with httpx.Client(timeout=timeout) as client:
         try:
-            response = client.post(openai_url, json=body)
-            if response.status_code == 404:
-                raise httpx.HTTPStatusError(
-                    "Ollama OpenAI route missing", request=response.request, response=response
-                )
-            response.raise_for_status()
-            return _extract_openai_content(response.json())
-        except (httpx.HTTPError, ValueError, json.JSONDecodeError):
-            native_url = f"{base}/api/chat"
-            native_body = {
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "options": {"temperature": temperature},
-            }
             response = client.post(native_url, json=native_body)
             response.raise_for_status()
             data = response.json()
             text = (data.get("message") or {}).get("content")
-            if not text or not str(text).strip():
-                raise ValueError("Ollama returned empty content.")
-            return str(text).strip()
+            if text and str(text).strip():
+                return str(text).strip()
+        except Exception:
+            pass
+
+        openai_url = f"{base}/v1/chat/completions"
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": "user", "content": clipped}],
+            "temperature": temperature,
+            "stream": False,
+        }
+        try:
+            response = client.post(openai_url, json=body)
+            response.raise_for_status()
+            return _extract_openai_content(response.json())
+        except Exception as exc:
+            raise ValueError(f"Ollama chat generation failed for model '{model}': {exc}") from exc
 
 
 def _prepare_vision_image(image_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
@@ -248,7 +389,12 @@ def generate_from_image(
     errors: list[str] = []
 
     # NVIDIA NIM vision.
-    if nvidia_key and nvidia_key not in PLACEHOLDER_KEYS:
+    nvidia_available = (
+        nvidia_key
+        and nvidia_key not in PLACEHOLDER_KEYS
+        and not is_nvidia_exhausted()
+    )
+    if nvidia_available:
         nvidia_models = [vision_model]
         if DEFAULT_NVIDIA_VISION_MODEL not in nvidia_models:
             nvidia_models.append(DEFAULT_NVIDIA_VISION_MODEL)
@@ -291,6 +437,9 @@ def generate_from_image(
                     return content, f"nvidia:{candidate_model}"
             except httpx.HTTPStatusError as exc:
                 errors.append(f"NVIDIA {candidate_model}: {_public_llm_error(exc)}")
+                if _is_nvidia_quota_error(exc):
+                    mark_nvidia_exhausted(NVIDIA_QUOTA_COOLDOWN)
+                    break
                 if (
                     exc.response.status_code in {404, 410}
                     and candidate_model != nvidia_models[-1]
@@ -299,9 +448,11 @@ def generate_from_image(
                 break
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"NVIDIA {candidate_model}: {_public_llm_error(exc)}")
+                if _is_nvidia_quota_error(exc) or _is_nvidia_unavailable(exc):
+                    mark_nvidia_exhausted(NVIDIA_TRANSIENT_COOLDOWN)
                 break
     else:
-        errors.append("NVIDIA: NVIDIA_API_KEY is not configured.")
+        errors.append("NVIDIA: NVIDIA_API_KEY is not configured or quota is exhausted.")
 
     # Try Ollama llava fallback only if Ollama is online
     if _is_ollama_online():
@@ -341,52 +492,100 @@ def generate_text(
 ) -> tuple[str, str]:
     """
     Return (text, provider_label).
-    Tries NVIDIA NIM first, then Ollama on any failure.
+    Tries NVIDIA NIM first, then local Ollama for the rest of the run
+    when the NVIDIA key is exhausted, rate-limited, or otherwise unavailable.
     """
     full_prompt = _json_hint(prompt, response_mime_type)
     nvidia_key = (api_key if api_key is not None else NVIDIA_API_KEY).strip()
     nvidia_model = resolve_nvidia_model(model_name)
     errors: list[str] = []
 
-    if nvidia_key and nvidia_key not in PLACEHOLDER_KEYS:
+    nvidia_available = (
+        nvidia_key
+        and nvidia_key not in PLACEHOLDER_KEYS
+        and not is_nvidia_exhausted()
+    )
+
+    if nvidia_available:
         nvidia_models = [nvidia_model]
         if DEFAULT_NVIDIA_MODEL not in nvidia_models:
             nvidia_models.append(DEFAULT_NVIDIA_MODEL)
-        if "nvidia/nemotron-3.5-lightning-30b-a3b" not in nvidia_models:
-            nvidia_models.append("nvidia/nemotron-3.5-lightning-30b-a3b")
-        if "mistralai/mistral-large-4-1t-a52b" not in nvidia_models:
-            nvidia_models.append("mistralai/mistral-large-4-1t-a52b")
 
+        nvidia_char_limits = (NVIDIA_PROMPT_CHARS, 8_000, 4_000)
+        stop_nvidia = False
         for candidate in nvidia_models:
-            try:
-                text = _nvidia_chat(
-                    full_prompt,
-                    api_key=nvidia_key,
-                    model=candidate,
-                    temperature=temperature,
-                )
-                return text, f"nvidia:{candidate}"
-            except httpx.HTTPStatusError as exc:
-                errors.append(f"NVIDIA {candidate}: {_public_llm_error(exc)}")
-                if (
-                    exc.response.status_code in {404, 410}
-                    and candidate != nvidia_models[-1]
-                ):
-                    continue
+            try_next_model = False
+            for limit in nvidia_char_limits:
+                try:
+                    text = _nvidia_chat(
+                        full_prompt,
+                        api_key=nvidia_key,
+                        model=candidate,
+                        temperature=temperature,
+                        max_chars=limit,
+                    )
+                    return text, f"nvidia:{candidate}"
+                except httpx.HTTPStatusError as exc:
+                    errors.append(f"NVIDIA {candidate}: {_public_llm_error(exc)}")
+                    if _is_nvidia_quota_error(exc):
+                        mark_nvidia_exhausted(NVIDIA_QUOTA_COOLDOWN)
+                        stop_nvidia = True
+                        break
+                    if _is_nvidia_context_error(exc):
+                        continue
+                    if _is_nvidia_unavailable(exc):
+                        mark_nvidia_exhausted(NVIDIA_TRANSIENT_COOLDOWN)
+                        stop_nvidia = True
+                        break
+                    if (
+                        exc.response.status_code in {404, 410}
+                        and candidate != nvidia_models[-1]
+                    ):
+                        try_next_model = True
+                        break
+                    stop_nvidia = True
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"NVIDIA {candidate}: {exc}")
+                    if _is_nvidia_quota_error(exc):
+                        mark_nvidia_exhausted(NVIDIA_QUOTA_COOLDOWN)
+                        stop_nvidia = True
+                        break
+                    if _is_nvidia_context_error(exc):
+                        continue
+                    if _is_nvidia_unavailable(exc):
+                        mark_nvidia_exhausted(NVIDIA_TRANSIENT_COOLDOWN)
+                    stop_nvidia = True
+                    break
+            if stop_nvidia:
                 break
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"NVIDIA {candidate}: {exc}")
-                break
+            if try_next_model:
+                continue
+            # Context window still too large after shrinking; let Ollama finish.
+            break
 
+    ollama_model = _resolve_available_ollama_model((OLLAMA_MODEL or "llama3.2").strip())
     if _is_ollama_online():
-        ollama_model = (OLLAMA_MODEL or "llama3.2").strip()
-        try:
-            text = _ollama_chat(full_prompt, model=ollama_model, temperature=temperature)
-            return text, f"ollama:{ollama_model}"
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"Ollama: {exc}")
+        ollama_limits = (OLLAMA_PROMPT_CHARS, 4_000, 2_000)
+        for limit in ollama_limits:
+            try:
+                text = _ollama_chat(
+                    full_prompt,
+                    model=ollama_model,
+                    temperature=temperature,
+                    want_json=response_mime_type == "application/json",
+                    max_chars=limit,
+                )
+                return text, f"ollama:{ollama_model}"
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"Ollama ({ollama_model}): {exc}")
+                if not (_is_nvidia_context_error(exc) or _is_nvidia_unavailable(exc)):
+                    break
     else:
-        ollama_model = (OLLAMA_MODEL or "llama3.2").strip()
+        errors.append(
+            f"Ollama is not running at {OLLAMA_BASE_URL}. "
+            "Start Ollama so remaining work can continue after NVIDIA quota is used."
+        )
 
     detail = "; ".join(errors) if errors else "No LLM configured."
     raise LLMError(
@@ -398,6 +597,6 @@ def generate_text(
 
 def llm_is_configured() -> bool:
     key = NVIDIA_API_KEY.strip()
-    if key and key not in PLACEHOLDER_KEYS:
+    if key and key not in PLACEHOLDER_KEYS and not is_nvidia_exhausted():
         return True
-    return bool(OLLAMA_BASE_URL.strip())
+    return _is_ollama_online()

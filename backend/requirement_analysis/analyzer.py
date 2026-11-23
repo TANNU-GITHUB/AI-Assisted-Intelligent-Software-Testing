@@ -214,6 +214,8 @@ def analyze_requirements(
     text = requirements_text.strip()
     if not text:
         raise RequirementAnalysisError("Requirements text cannot be empty.")
+    if len(text) > 12_000:
+        text = text[:12_000] + "\n# ... (requirements truncated for LLM context) ..."
 
     first_prompt = PROMPT_TEMPLATE.replace("{requirements_text}", text)
     retry_prompt = STRICT_RETRY_PROMPT.replace("{requirements_text}", text)

@@ -9,6 +9,8 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from llm_client import LLMError
+
 
 from auth.github_routes import router as github_router
 from auth.routes import get_current_user, router as auth_router
@@ -83,6 +85,45 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/status/llm")
+def llm_status() -> dict:
+    """Return whether each LLM provider is reachable. Used by the frontend to show helpful errors."""
+    from llm_client import (
+        NVIDIA_API_KEY as _nv_key,
+        OLLAMA_BASE_URL as _ollama_url,
+        OLLAMA_MODEL as _ollama_model,
+        PLACEHOLDER_KEYS,
+        _is_ollama_online,
+        _resolve_available_ollama_model,
+        is_nvidia_exhausted,
+    )
+    nvidia_configured = bool(_nv_key and _nv_key not in PLACEHOLDER_KEYS)
+    nvidia_available = nvidia_configured and not is_nvidia_exhausted()
+    ollama_online = _is_ollama_online()
+    ollama_model = _resolve_available_ollama_model(_ollama_model) if ollama_online else _ollama_model
+    return {
+        "nvidia": {
+            "configured": nvidia_configured,
+            "available": nvidia_available,
+            "exhausted": nvidia_configured and is_nvidia_exhausted(),
+        },
+        "ollama": {
+            "url": _ollama_url,
+            "online": ollama_online,
+            "model": ollama_model,
+        },
+        "any_llm_available": nvidia_available or ollama_online,
+        "hint": (
+            None if (nvidia_available or ollama_online)
+            else (
+                "No LLM is reachable. "
+                "Either set NVIDIA_API_KEY in backend/.env, or install Ollama from "
+                "https://ollama.com and run: ollama pull llama3.2"
+            )
+        ),
+    }
+
+
 @app.post("/api/requirements/extract")
 async def extract_requirements_document(
     requirements_file: UploadFile = File(...),
@@ -93,8 +134,24 @@ async def extract_requirements_document(
     raw = await requirements_file.read()
     try:
         text = extract_requirements_text(filename, raw)
-    except DocumentVisionError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except DocumentVisionError:
+        # Vision enhancement failed — the PDF text was still extracted.
+        # Re-run without vision by calling the PDF text path only.
+        try:
+            from input_handler.documents import _from_plain, _from_pdf, _from_docx, _from_doc, _normalize
+            suffix = ("." + filename.rsplit(".", 1)[-1]).lower() if "." in filename else ""
+            if suffix == ".pdf":
+                text = _normalize(_from_pdf(raw))
+            elif suffix == ".docx":
+                text = _normalize(_from_docx(raw))
+            elif suffix == ".doc":
+                text = _normalize(_from_doc(raw))
+            else:
+                text = _normalize(_from_plain(raw))
+            if not text:
+                raise DocumentExtractError("No readable text was found in that file.")
+        except DocumentExtractError as exc2:
+            raise HTTPException(status_code=400, detail=str(exc2)) from exc2
     except DocumentExtractError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"filename": filename, "requirements_text": text}
@@ -205,8 +262,12 @@ async def create_analysis_session(
         return session_with_files(payload["session_id"])
     except (InputValidationError, CodeAnalysisError, RequirementAnalysisError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LLMError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _session_step_error(exc) from exc
 
 
 @app.get("/api/sessions/{session_id}")
@@ -245,10 +306,25 @@ def get_session_report(session_id: str, user: UserRecord = Depends(get_current_u
         return HTMLResponse(content=html, headers={"Content-Disposition": "attachment; filename=test-report.html"})
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)[:500]) from exc
 
 
 def _protected_session(session_id: str, user: UserRecord) -> None:
     assert_session_owner(session_id, user)
+
+
+def _session_step_error(exc: Exception) -> HTTPException:
+    logger.exception("Session step failed: %s", exc)
+    if isinstance(exc, LLMError):
+        return HTTPException(
+            status_code=503,
+            detail=str(exc),
+        )
+    return HTTPException(
+        status_code=400,
+        detail=f"{type(exc).__name__}: {str(exc)[:500]}",
+    )
 
 
 @app.post("/api/sessions/{session_id}/code-analysis")
@@ -261,6 +337,8 @@ def run_code_analysis(session_id: str, user: UserRecord = Depends(get_current_us
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CodeAnalysisError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _session_step_error(exc) from exc
 
 
 @app.post("/api/sessions/{session_id}/requirement-analysis")
@@ -284,6 +362,8 @@ def run_white_box_tests(session_id: str, user: UserRecord = Depends(get_current_
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except WhiteBoxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _session_step_error(exc) from exc
 
 
 @app.post("/api/sessions/{session_id}/black-box-tests")
@@ -296,6 +376,8 @@ def run_black_box_tests(session_id: str, user: UserRecord = Depends(get_current_
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BlackBoxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _session_step_error(exc) from exc
 
 
 @app.post("/api/sessions/{session_id}/other-tests")
@@ -308,6 +390,8 @@ def run_other_tests(session_id: str, user: UserRecord = Depends(get_current_user
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except OtherTestsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _session_step_error(exc) from exc
 
 @app.post("/api/sessions/{session_id}/execute-tests")
 def run_execute_tests(session_id: str, user: UserRecord = Depends(get_current_user)):
@@ -319,6 +403,8 @@ def run_execute_tests(session_id: str, user: UserRecord = Depends(get_current_us
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ExecutionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _session_step_error(exc) from exc
     
 @app.post("/api/sessions/{session_id}/gap-fill-tests")
 def run_gap_fill_tests(session_id: str, user: UserRecord = Depends(get_current_user)):
@@ -330,6 +416,8 @@ def run_gap_fill_tests(session_id: str, user: UserRecord = Depends(get_current_u
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except GapFillError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _session_step_error(exc) from exc
 
 
 @app.post("/api/sessions/{session_id}/coverage")
@@ -342,17 +430,53 @@ def run_coverage(session_id: str, user: UserRecord = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CoverageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _session_step_error(exc) from exc
 
 
 def _register_llm_exception_handlers(application: FastAPI) -> None:
-    from llm_client import LLMError
+    import traceback
 
     @application.exception_handler(LLMError)
     async def _llm_error(_request, exc: LLMError):
         return JSONResponse(
             status_code=503,
-            content={"detail": str(exc)},
+            content={"detail": (
+                f"{exc} "
+                "— Install Ollama from https://ollama.com and run: "
+                "ollama pull llama3.2  (then restart the backend)"
+            )},
+        )
+
+    @application.exception_handler(Exception)
+    async def _global_error_handler(_request, exc: Exception):
+        if isinstance(exc, HTTPException):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+                headers=getattr(exc, "headers", None),
+            )
+        if isinstance(exc, LLMError):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": str(exc)},
+            )
+        logger.error("Unhandled server exception: %s\n%s", exc, traceback.format_exc())
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"{type(exc).__name__}: {str(exc)[:500]}"},
         )
 
 
 _register_llm_exception_handlers(app)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        reload_excludes=["sessions", "data", "sessions/*", "*.json"],
+    )

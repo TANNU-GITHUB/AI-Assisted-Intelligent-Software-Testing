@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import time
 from typing import Any, Callable
 
 from config import NVIDIA_API_KEY, NVIDIA_MODEL
@@ -32,8 +33,17 @@ class WhiteBoxError(Exception):
 
 
 def _call_llm(prompt: str, api_key: str, model_name: str) -> str:
-    text, _model_used = generate_text(prompt, api_key=api_key, model_name=model_name)
-    return text
+    """Call the LLM. Wraps LLMError in WhiteBoxError so it stays a 400, not a 500."""
+    try:
+        text, _model_used = generate_text(prompt, api_key=api_key, model_name=model_name)
+        return text
+    except WhiteBoxError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise WhiteBoxError(
+            f"LLM unavailable — {exc}. "
+            "Install Ollama (https://ollama.com) and run: ollama pull llama3.2"
+        ) from exc
 
 
 def _function_source(module_source: str, lineno: int, end_lineno: int) -> str:
@@ -97,6 +107,9 @@ def _normalize_cases(data: Any, function_name: str) -> list[dict[str, Any]]:
     return normalized
 
 
+_MAX_MODULE_SOURCE_CHARS = 20_000
+
+
 def _generate_cases_with_llm(
     *,
     function_name: str,
@@ -108,11 +121,16 @@ def _generate_cases_with_llm(
     llm_call: Callable[..., str] = _call_llm,
 ) -> list[dict[str, Any]]:
     branch_map = json.dumps(branches, indent=2)
+    truncated_module = (
+        module_source
+        if len(module_source) <= _MAX_MODULE_SOURCE_CHARS
+        else (module_source[:_MAX_MODULE_SOURCE_CHARS] + "\n# ... (truncated for context) ...")
+    )
     prompt = PROMPT_TEMPLATE.format(
         function_name=function_name,
         branch_map=branch_map,
         function_source=function_source,
-        module_source=module_source,
+        module_source=truncated_module,
     )
     try:
         raw = llm_call(prompt, api_key, model_name)
@@ -137,22 +155,13 @@ def _fallback_cases(
     module_source: str,
 ) -> list[dict[str, Any]]:
     """Deterministic branch-oriented cases when the LLM is unavailable or invalid."""
-    name = function_meta["name"]
+    name = function_meta.get("name", "func")
     if "." in function_meta.get("qualified_name", name):
-        raise WhiteBoxError(
-            f"Fallback generator does not support methods yet: {function_meta['qualified_name']}"
-        )
+        return []
 
-    param_names = [p["name"] for p in function_meta.get("params", [])]
+    params_meta = function_meta.get("params", [])
     branches = function_meta.get("branches") or []
     cases: list[dict[str, Any]] = []
-
-    tree = ast.parse(module_source)
-    if not any(
-        isinstance(node, ast.FunctionDef) and node.name == name
-        for node in ast.walk(tree)
-    ):
-        raise WhiteBoxError(f"Could not locate function {name} for fallback generation.")
 
     def add_case(
         case_id: str,
@@ -173,7 +182,6 @@ def _fallback_cases(
             }
         )
 
-    params_meta = function_meta.get("params", [])
     if not branches:
         smoke_input = _default_inputs_for_params(params_meta)
         add_case("smoke", "default smoke test", smoke_input)
@@ -181,7 +189,10 @@ def _fallback_cases(
 
     for branch_index, branch in enumerate(branches, start=1):
         condition = str(branch.get("condition") or "")
-        inputs = _inputs_from_condition(condition, params_meta)
+        try:
+            inputs = _inputs_from_condition(condition, params_meta)
+        except Exception:
+            inputs = _default_inputs_for_params(params_meta)
 
         cond_low = condition.lower()
         expected_exception = None
@@ -216,7 +227,8 @@ def _fallback_cases(
         add_case("bool_flip", "alternate boolean branch", alt)
 
     if not cases:
-        raise WhiteBoxError(f"Fallback generator produced no cases for {name}.")
+        add_case("smoke", "default smoke test", _default_inputs_for_params(params_meta))
+
     return cases
 
 
@@ -311,7 +323,10 @@ def analyze_session_white_box(session_id: str) -> dict:
 
     key = NVIDIA_API_KEY.strip()
     model = NVIDIA_MODEL
-    llm_available = llm_is_configured()
+    llm_used = 0
+    llm_started = time.monotonic()
+    max_llm_functions = 30
+    llm_wall_seconds = 240.0
     try:
         for fn in functions:
             if fn.get("is_async"):
@@ -332,8 +347,13 @@ def analyze_session_white_box(session_id: str) -> dict:
             snippet = _function_source(module_source, fn["lineno"], fn["end_lineno"])
             branches = fn.get("branches") or []
             source = "fallback"
-            try:
-                if llm_available:
+            remaining_llm_budget = (
+                llm_is_configured()
+                and llm_used < max_llm_functions
+                and (time.monotonic() - llm_started) < llm_wall_seconds
+            )
+            if remaining_llm_budget:
+                try:
                     cases = _generate_cases_with_llm(
                         function_name=name,
                         function_source=snippet,
@@ -343,34 +363,61 @@ def analyze_session_white_box(session_id: str) -> dict:
                         model_name=model,
                     )
                     source = "llm"
-                else:
+                    llm_used += 1
+                except Exception:
+                    try:
+                        cases = _fallback_cases(fn, module_source)
+                    except Exception:
+                        cases = []
+                    source = "fallback"
+            else:
+                try:
                     cases = _fallback_cases(fn, module_source)
-            except Exception:
-                llm_available = False
-                cases = _fallback_cases(fn, module_source)
+                except Exception:
+                    cases = []
                 source = "fallback"
 
-            cases = _assign_requirement_ids(cases, requirement_ids)
-            all_cases.extend(cases)
-            file_path = _write_pytest_file(session_id, name, cases)
-            files_written.append(file_path)
-            per_function.append(
-                {
-                    "function": qualified,
-                    "status": "generated",
-                    "source": source,
-                    "case_count": len(cases),
-                    "cases": cases,
-                    "file": file_path,
-                }
-            )
+            if not cases:
+                cases = [
+                    {
+                        "case_id": "smoke",
+                        "description": f"default smoke test for {name}",
+                        "input": _default_inputs_for_params(fn.get("params", [])),
+                        "expected_output": None,
+                        "expected_exception": None,
+                        "test_type": "white_box",
+                        "function_name": name,
+                        "assert_output": False,
+                    }
+                ]
+
+            try:
+                cases = _assign_requirement_ids(cases, requirement_ids)
+                all_cases.extend(cases)
+                file_path = _write_pytest_file(session_id, name, cases)
+                files_written.append(file_path)
+                per_function.append(
+                    {
+                        "function": qualified,
+                        "status": "generated",
+                        "source": source,
+                        "case_count": len(cases),
+                        "cases": cases,
+                        "file": file_path,
+                    }
+                )
+            except Exception as write_err:
+                log_session_error(session_id, f"white_box.write.{name}", write_err)
+                continue
 
     except WhiteBoxError as exc:
         log_session_error(session_id, "white_box", exc)
-        raise
+        if not all_cases:
+            raise
     except Exception as exc:  # noqa: BLE001
         log_session_error(session_id, "white_box", exc)
-        raise WhiteBoxError(str(exc)) from exc
+        if not all_cases:
+            raise WhiteBoxError(str(exc)) from exc
 
     result = {
         "test_count": len(all_cases),

@@ -27,8 +27,17 @@ class BlackBoxError(Exception):
 
 
 def _call_llm(prompt: str, api_key: str, model_name: str) -> str:
-    text, _model_used = generate_text(prompt, api_key=api_key, model_name=model_name)
-    return text
+    """Call the LLM. Wraps LLMError in BlackBoxError so it stays a 400, not a 500."""
+    try:
+        text, _model_used = generate_text(prompt, api_key=api_key, model_name=model_name)
+        return text
+    except BlackBoxError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise BlackBoxError(
+            f"LLM unavailable — {exc}. "
+            "Install Ollama (https://ollama.com) and run: ollama pull llama3.2"
+        ) from exc
 
 
 def _public_api_from_ast(source_code: str) -> list[dict[str, Any]]:
@@ -348,10 +357,17 @@ def _generate_cases_with_llm(
 ) -> list[dict[str, Any]]:
     requirement_ids = {req["requirement_id"] for req in structured_requirements}
     allowed_functions = {entry["name"] for entry in public_api}
+    req_text = (
+        requirements_text
+        if len(requirements_text) <= 8_000
+        else requirements_text[:8_000] + "\n# ... (truncated for LLM context) ..."
+    )
+    structured_for_llm = structured_requirements[:40]
+    api_for_llm = public_api[:40]
     prompt = (
-        PROMPT_TEMPLATE.replace("<<<REQUIREMENTS_TEXT>>>", requirements_text)
-        .replace("<<<STRUCTURED_REQUIREMENTS>>>", json.dumps(structured_requirements, indent=2))
-        .replace("<<<PUBLIC_API>>>", json.dumps(public_api, indent=2))
+        PROMPT_TEMPLATE.replace("<<<REQUIREMENTS_TEXT>>>", req_text)
+        .replace("<<<STRUCTURED_REQUIREMENTS>>>", json.dumps(structured_for_llm, indent=2))
+        .replace("<<<PUBLIC_API>>>", json.dumps(api_for_llm, indent=2))
     )
     raw = ""
     try:
@@ -429,8 +445,25 @@ def _fallback_cases(
             }
         )
 
-    if not cases:
-        raise BlackBoxError("Heuristic black-box generator produced no cases.")
+    if not cases and public_api:
+        first_entry = public_api[0]
+        default_fn = first_entry["name"]
+        default_params = first_entry.get("params") or []
+        for index, requirement in enumerate(structured_requirements):
+            cases.append(
+                {
+                    "case_id": f"bb-req-{index + 1}",
+                    "description": requirement.get("condition") or f"requirement {index + 1}",
+                    "requirement_id": requirement.get("requirement_id") or f"REQ-{index + 1:02d}",
+                    "function_name": default_fn,
+                    "input": _inputs_from_condition(requirement.get("condition", ""), default_params),
+                    "expected_output": None,
+                    "expected_exception": None,
+                    "test_type": "black_box",
+                    "source": "heuristic-fallback",
+                    "assert_output": False,
+                }
+            )
     return cases
 
 
@@ -537,8 +570,31 @@ def analyze_session_black_box(session_id: str) -> dict:
         else:
             cases = _fallback_cases(structured, public_api, source_code)
     except Exception:
-        cases = _fallback_cases(structured, public_api, source_code)
+        try:
+            cases = _fallback_cases(structured, public_api, source_code)
+        except Exception:
+            cases = []
         source = "heuristic-fallback"
+
+    if not cases and public_api:
+        first_entry = public_api[0]
+        default_fn = first_entry["name"]
+        default_params = first_entry.get("params") or []
+        for index, requirement in enumerate(structured):
+            cases.append(
+                {
+                    "case_id": f"bb-req-{index + 1}",
+                    "description": requirement.get("condition") or f"requirement {index + 1}",
+                    "requirement_id": requirement.get("requirement_id") or f"REQ-{index + 1:02d}",
+                    "function_name": default_fn,
+                    "input": _inputs_from_condition(requirement.get("condition", ""), default_params),
+                    "expected_output": None,
+                    "expected_exception": None,
+                    "test_type": "black_box",
+                    "source": "heuristic-fallback",
+                    "assert_output": False,
+                }
+            )
 
     file_path = _write_pytest_file(session_id, cases)
     per_requirement: dict[str, list[dict[str, Any]]] = {rid: [] for rid in requirement_ids}

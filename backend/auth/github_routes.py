@@ -32,8 +32,18 @@ router = APIRouter(prefix="/api/github", tags=["github"])
 _REPO_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 _MAX_FILE_BYTES = 400_000
 _SOURCE_SUFFIXES = {".py"}
-_REQ_NAMES = {"requirements.txt", "requirement.txt", "spec.txt", "specs.txt"}
-_REQ_SUFFIXES = {".txt", ".md"}
+_REQ_NAMES = {
+    "requirements.txt", "requirement.txt", "spec.txt", "specs.txt",
+    "spec.md", "specs.md", "readme.md", "readme.txt",
+    "openapi.yaml", "openapi.yml", "openapi.json",
+    "swagger.yaml", "swagger.yml", "swagger.json",
+    "asyncapi.yaml", "asyncapi.yml", "asyncapi.json",
+    "spec.yaml", "spec.yml", "spec.json",
+    "specs.yaml", "specs.yml", "specs.json",
+    "api-spec.yaml", "api-spec.yml", "api-spec.json",
+    "api_spec.yaml", "api_spec.yml", "api_spec.json",
+}
+_REQ_SUFFIXES = {".txt", ".md", ".yaml", ".yml", ".json", ".rst"}
 
 
 class GitHubCallbackBody(BaseModel):
@@ -209,7 +219,10 @@ def list_contents(
             continue
         lower = name.lower()
         is_source = any(lower.endswith(suffix) for suffix in _SOURCE_SUFFIXES)
-        is_req = lower in _REQ_NAMES or any(lower.endswith(suffix) for suffix in _REQ_SUFFIXES)
+        is_req = (
+            lower in _REQ_NAMES
+            or any(lower.endswith(suffix) for suffix in _REQ_SUFFIXES)
+        )
         if not (is_source or is_req):
             continue
         entries.append(
@@ -279,3 +292,8 @@ def run_project_agent(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except GitHubOAuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — catch-all to avoid 500s
+        raise HTTPException(
+            status_code=400,
+            detail=f"Project agent failed: {exc}",
+        ) from exc
