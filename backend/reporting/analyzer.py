@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,34 +48,69 @@ def _find_test_case_inputs(test_id: str, payload: dict) -> dict:
 
     # Determine which bucket to search
     tid = test_id.lower()
+    cases = []
     if "white_box" in tid:
-        cases = (payload.get("white_box_tests") or {}).get("test_cases") or []
+        wb = payload.get("white_box_tests") or {}
+        functions = wb.get("functions") or []
+        for fn in functions:
+            fn_name = (fn.get("function") or "").lower()
+            if fn_name and fn_name in tid:
+                cases = fn.get("cases") or []
+                break
+        if not cases:
+            raw = wb.get("test_cases")
+            cases = raw if isinstance(raw, list) else []
     elif "black_box" in tid:
-        cases = (payload.get("black_box_tests") or {}).get("test_cases") or []
+        raw = (payload.get("black_box_tests") or {}).get("test_cases")
+        cases = raw if isinstance(raw, list) else []
     elif "integration" in tid:
-        cases = (payload.get("other_tests") or {}).get("integration_tests") or []
+        raw = (payload.get("other_tests") or {}).get("integration_tests")
+        cases = raw if isinstance(raw, list) else []
     elif "negative" in tid:
-        cases = (payload.get("other_tests") or {}).get("negative_tests") or []
+        raw = (payload.get("other_tests") or {}).get("negative_tests")
+        cases = raw if isinstance(raw, list) else []
     elif "gap_fill" in tid:
-        cases = (payload.get("gap_fill") or {}).get("extra_cases") or []
+        raw = (payload.get("gap_fill") or {}).get("test_cases")
+        cases = raw if isinstance(raw, list) else []
+        if not cases:
+            sid = payload.get("session_id")
+            if sid:
+                from config import SESSIONS_DIR
+
+                gap_py = SESSIONS_DIR / sid / "tests" / "gap_fill" / "test_gap_fill.py"
+                if gap_py.is_file():
+                    try:
+                        content = gap_py.read_text(encoding="utf-8")
+                        for match in re.finditer(
+                            r"def\s+(test_gap_case_\d+).*?json\.loads\('([^']+)'\)", content, re.DOTALL
+                        ):
+                            cases.append({"case_id": match.group(1), "input": json.loads(match.group(2))})
+                    except Exception:
+                        pass
     else:
         cases = []
 
+    if not isinstance(cases, list):
+        cases = []
+
     # Extract 1-based case number from the node id, e.g. "case3" → 3
-    case_num_match = re.search(r"case(\d+)", test_id, re.IGNORECASE)
+    case_num_match = re.search(r"case_?(\d+)", test_id, re.IGNORECASE)
     if case_num_match:
         idx = int(case_num_match.group(1)) - 1
         if 0 <= idx < len(cases):
             tc = cases[idx]
-            return {
-                "function_name": tc.get("function_name") or tc.get("caller") or "",
-                "input_values": tc.get("input") or {},
-                "expected_output": tc.get("expected_output"),
-                "expected_exception": tc.get("expected_exception"),
-            }
+            if isinstance(tc, dict):
+                return {
+                    "function_name": tc.get("function_name") or tc.get("caller") or "",
+                    "input_values": tc.get("input") or {},
+                    "expected_output": tc.get("expected_output"),
+                    "expected_exception": tc.get("expected_exception"),
+                }
 
     # Fallback: match by case_id field
     for tc in cases:
+        if not isinstance(tc, dict):
+            continue
         cid = str(tc.get("case_id") or "")
         if cid and cid in test_id:
             return {
@@ -152,6 +188,14 @@ def build_report_data(payload: dict) -> dict:
             }
             for test in tests
             if test.get("status") in {"failed", "error"} and not test.get("flaky")
+        ],
+        "passed_tests": [
+            {
+                **test,
+                **_find_test_case_inputs(test.get("test_id") or "", payload),
+            }
+            for test in tests
+            if test.get("status") == "passed" and not test.get("flaky")
         ],
     }
 

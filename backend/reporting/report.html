@@ -122,6 +122,39 @@
   </tbody></table>
   {% else %}<p class="pass">No failing tests reported.</p>{% endif %}
 
+  <h2>Passed tests — input values verified</h2>
+  {% if passed_tests %}
+  <table><thead><tr><th>Test</th><th>Requirement</th><th>Verified input values</th></tr></thead><tbody>
+  {% for test in passed_tests %}
+    <tr>
+      <td>
+        <strong>{{ test.test_id }}</strong>
+        {% if test.function_name %}<br><span class="muted">fn: {{ test.function_name }}</span>{% endif %}
+      </td>
+      <td>{{ test.requirement_id or "Unlinked" }}{% if test.requirement_condition %}<br><span class="muted">{{ test.requirement_condition }}</span>{% endif %}</td>
+      <td>
+        <span class="pass">Passed</span>
+        {% if test.input_values %}
+        <div class="detail-block detail-inputs">
+          <strong>Input values</strong>
+          <table class="input-table">
+            {% for k, v in test.input_values.items() %}
+            <tr><td>{{ k }}</td><td><code>{{ v }}</code></td></tr>
+            {% endfor %}
+          </table>
+        </div>
+        {% endif %}
+        {% if test.expected_output %}
+        <div style="margin-top:4px; font-size:11px; color:#586574;">
+          Expected result: <code>{{ test.expected_output }}</code>
+        </div>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<p class="muted">No passed tests reported.</p>{% endif %}
+
   <h2>Requirement file coverage</h2>
   {% if requirement_coverage and requirement_coverage.requirements %}
   <p class="meta">{{ requirement_coverage.tested_count }}/{{ requirement_coverage.requirement_count }} requirements have executed tests

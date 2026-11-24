@@ -150,6 +150,7 @@ def analyze_session_gap_fill(session_id: str) -> dict:
 
     payload["gap_fill"] = {
         "extra_cases": len(extra_cases),
+        "test_cases": extra_cases,
         "files_written": files_written,
         "missing_lines_targeted": sorted(missing_lines),
         "untested_requirements": [item.get("requirement_id") for item in untested],
