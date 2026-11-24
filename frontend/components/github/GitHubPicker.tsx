@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Folder, FileCode2, FileText, Github, Loader2, Unplug } from 'lucide-react';
+import { Folder, FileCode2, FileText, Image as ImageIcon, Github, Loader2, Unplug } from 'lucide-react';
 import {
   disconnectGitHub,
   fetchGitHubStatus,
@@ -25,6 +25,7 @@ type Props = {
     filename: string;
     source_code: string;
     requirements_text: string;
+    requirements_filename?: string;
   }) => void;
   onProjectTested?: (session: SessionPayload) => void;
   onProjectStart?: () => void;
@@ -136,6 +137,7 @@ export function GitHubPicker({
         filename: data.filename,
         source_code: data.source_code,
         requirements_text: data.requirements_text,
+        requirements_filename: data.requirements_filename,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed.');
@@ -266,11 +268,26 @@ export function GitHubPicker({
                   )}
                   {entries.map((entry) => {
                     const extension = entry.path.split('.').pop()?.toLowerCase();
+                    const isReqExt = [
+                      'txt',
+                      'md',
+                      'yaml',
+                      'yml',
+                      'json',
+                      'pdf',
+                      'docx',
+                      'doc',
+                      'png',
+                      'jpg',
+                      'jpeg',
+                      'webp',
+                    ].includes(extension || '');
+                    const isImage = ['png', 'jpg', 'jpeg', 'webp'].includes(extension || '');
                     const kind =
                       entry.kind ??
                       (extension === 'py'
                         ? 'source'
-                        : extension === 'txt' || extension === 'md'
+                        : isReqExt
                           ? 'requirements'
                           : null);
                     if (entry.type === 'file' && !kind) return null;
@@ -300,6 +317,8 @@ export function GitHubPicker({
                           >
                             {kind === 'source' ? (
                               <FileCode2 className="w-3 h-3" />
+                            ) : isImage ? (
+                              <ImageIcon className="w-3 h-3 text-yellow-500" />
                             ) : (
                               <FileText className="w-3 h-3" />
                             )}
@@ -325,7 +344,7 @@ export function GitHubPicker({
       {status?.connected && (
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <p className="text-[11px] text-muted-foreground">
-            Source: {sourcePath || 'pick a .py file'} · Requirements: {reqPath || 'optional .txt/.md'}
+            Source: {sourcePath || 'pick a .py file'} · Requirements: {reqPath || 'optional .txt/.md/.pdf/.docx/.png'}
           </p>
           <button
             type="button"

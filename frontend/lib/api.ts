@@ -320,6 +320,7 @@ export async function importFromGitHub(body: {
   filename: string;
   source_code: string;
   requirements_text: string;
+  requirements_filename?: string;
   repo: string;
   source_path: string;
 }> {

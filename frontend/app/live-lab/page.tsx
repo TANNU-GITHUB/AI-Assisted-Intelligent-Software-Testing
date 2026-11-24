@@ -343,12 +343,17 @@ export default function LiveLabPage() {
 
         <GitHubPicker
           disabled={phase === 'running'}
-          onImported={({ filename: name, source_code, requirements_text }) => {
+          onImported={({
+            filename: name,
+            source_code,
+            requirements_text,
+            requirements_filename,
+          }) => {
             setFilename(name);
             setSourceCode(source_code);
             if (requirements_text.trim()) {
               setRequirements(requirements_text);
-              setRequirementsFilename('requirements.txt');
+              setRequirementsFilename(requirements_filename || 'requirements.txt');
             }
             setError(null);
           }}
