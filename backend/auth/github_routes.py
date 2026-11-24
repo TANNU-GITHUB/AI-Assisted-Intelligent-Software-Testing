@@ -13,6 +13,7 @@ from auth.github_oauth import (
     consume_github_state,
     create_github_auth_url,
     decode_github_file,
+    decode_github_file_bytes,
     exchange_code_for_github,
     github_request,
 )
@@ -30,7 +31,7 @@ from auth.token_crypto import decrypt_secret_with_upgrade, encrypt_secret
 router = APIRouter(prefix="/api/github", tags=["github"])
 
 _REPO_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
-_MAX_FILE_BYTES = 400_000
+_MAX_FILE_BYTES = 1_000_000
 _SOURCE_SUFFIXES = {".py"}
 _REQ_NAMES = {
     "requirements.txt", "requirement.txt", "spec.txt", "specs.txt",
@@ -43,7 +44,21 @@ _REQ_NAMES = {
     "api-spec.yaml", "api-spec.yml", "api-spec.json",
     "api_spec.yaml", "api_spec.yml", "api_spec.json",
 }
-_REQ_SUFFIXES = {".txt", ".md", ".yaml", ".yml", ".json", ".rst"}
+_REQ_SUFFIXES = {
+    ".txt",
+    ".md",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".rst",
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+}
 
 
 class GitHubCallbackBody(BaseModel):
@@ -255,18 +270,52 @@ def import_from_github(
     source_code = _decode_file_content(source_payload)
 
     requirements_text = ""
+    requirements_filename = ""
     if body.requirements_path:
         req_path = _safe_path(body.requirements_path)
+        requirements_filename = req_path.split("/")[-1]
         try:
             req_payload = github_request(token, f"/repos/{owner}/{repo}/contents/{req_path}")
-            requirements_text = _decode_file_content(req_payload)
+            name, raw_bytes = decode_github_file_bytes(req_payload)
+            lower_name = name.lower()
+            suffix = "." + lower_name.rsplit(".", 1)[-1] if "." in lower_name else ""
+            if suffix in {".pdf", ".docx", ".doc"}:
+                from input_handler.documents import extract_requirements_text
+
+                requirements_text = extract_requirements_text(name, raw_bytes)
+            elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+                from requirement_analysis.diagram_extractor import (
+                    extract_requirements_from_diagram,
+                    requirements_to_text,
+                )
+
+                mime = (
+                    "image/png"
+                    if suffix == ".png"
+                    else "image/jpeg"
+                    if suffix in {".jpg", ".jpeg"}
+                    else "image/webp"
+                )
+                diag_result = extract_requirements_from_diagram(raw_bytes, mime)
+                plain = diag_result.get("plain_text")
+                if not plain and diag_result.get("requirements"):
+                    plain = requirements_to_text(diag_result["requirements"])
+                requirements_text = plain or ""
+            else:
+                requirements_text = raw_bytes.decode("utf-8", errors="replace")
         except GitHubOAuthError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not extract requirements from {requirements_filename}: {exc}",
+            ) from exc
 
     return {
         "filename": source_path.split("/")[-1],
         "source_code": source_code,
         "requirements_text": requirements_text,
+        "requirements_filename": requirements_filename,
         "repo": f"{owner}/{repo}",
         "source_path": source_path,
     }

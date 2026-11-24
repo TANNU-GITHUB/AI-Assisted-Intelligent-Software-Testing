@@ -94,7 +94,7 @@ def _github_headers(access_token: str) -> dict[str, str]:
     }
 
 
-def decode_github_file(payload: dict[str, Any], *, max_bytes: int = 400_000) -> str:
+def decode_github_file_bytes(payload: dict[str, Any], *, max_bytes: int = 1_000_000) -> tuple[str, bytes]:
     import base64
 
     if payload.get("type") != "file":
@@ -113,6 +113,12 @@ def decode_github_file(payload: dict[str, Any], *, max_bytes: int = 400_000) -> 
         raw = str(content).encode("utf-8")
     if len(raw) > max_bytes:
         raise GitHubOAuthError(f"File is too large to import (max {max_bytes} bytes).")
+    name = str(payload.get("name") or "file")
+    return name, raw
+
+
+def decode_github_file(payload: dict[str, Any], *, max_bytes: int = 1_000_000) -> str:
+    _, raw = decode_github_file_bytes(payload, max_bytes=max_bytes)
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError as exc:

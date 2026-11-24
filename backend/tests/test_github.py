@@ -106,7 +106,7 @@ def test_github_repos_and_import(client, monkeypatch):
         headers=headers,
     )
     names = {item["name"] for item in listing.json()["entries"]}
-    assert names == {"src", "app.py", "README.md"}
+    assert names == {"src", "app.py", "README.md", "image.png"}
 
     imported = client.post(
         "/api/github/import",
