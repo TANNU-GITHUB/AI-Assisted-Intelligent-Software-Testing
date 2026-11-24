@@ -47,7 +47,7 @@ const stages = [
     id: '04',
     name: 'GENERATION',
     title: 'Test Case Generation',
-    description: 'Test cards multiply as the AI generates comprehensive test cases across multiple testing strategies — White Box, Black Box, Unit, Integration, Regression, and Negative Testing.',
+    description: 'Test cards multiply as the AI generates comprehensive test cases across multiple testing strategies — White, Black, Gray, Unit, Integration, Regression, and Negative Testing.',
     icon: FileCode2,
   },
   {

@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 from requirement_analysis.analyzer import RequirementAnalysisError, analyze_session_requirements
 from test_generation.black_box import BlackBoxError, analyze_session_black_box
 from test_generation.gap_fill import GapFillError, analyze_session_gap_fill
+from test_generation.gray_box import GrayBoxError, analyze_session_gray_box
 from test_generation.other_tests import OtherTestsError, analyze_session_other_tests
 from test_generation.white_box import WhiteBoxError, analyze_session_white_box
 from execution.analyzer import CoverageError, ExecutionError, analyze_session_coverage, analyze_session_execution
@@ -375,6 +376,20 @@ def run_black_box_tests(session_id: str, user: UserRecord = Depends(get_current_
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BlackBoxError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _session_step_error(exc) from exc
+
+
+@app.post("/api/sessions/{session_id}/gray-box-tests")
+def run_gray_box_tests(session_id: str, user: UserRecord = Depends(get_current_user)):
+    try:
+        _protected_session(session_id, user)
+        analyze_session_gray_box(session_id)
+        return session_with_files(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GrayBoxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise _session_step_error(exc) from exc

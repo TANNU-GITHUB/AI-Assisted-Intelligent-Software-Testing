@@ -11,6 +11,7 @@ import {
   Code2,
   FileText,
   Cpu,
+  GitBranch,
   CheckCircle2,
   Loader2,
   Zap,
@@ -28,6 +29,7 @@ import {
   runRequirementAnalysis,
   runWhiteBoxTests,
   runBlackBoxTests,
+  runGrayBoxTests,
   runOtherTests,
   runExecuteTests,
   runCoverage,
@@ -72,6 +74,7 @@ const analysisStages = [
   { label: 'Analyzing requirements with LLM...', icon: FileText },
   { label: 'Generating white-box tests...', icon: Code2 },
   { label: 'Generating black-box tests...', icon: FileText },
+  { label: 'Generating gray-box tests...', icon: GitBranch },
   { label: 'Generating integration & negative tests...', icon: FileText },
   { label: 'Executing generated tests...', icon: Cpu },
   { label: 'Measuring coverage...', icon: Cpu },
@@ -222,6 +225,14 @@ export default function LiveLabPage() {
         console.warn('Black-box test generation notice:', bbErr);
       }
       setStageIndex(5);
+      try {
+        const withGrayBox = await runGrayBoxTests(created.session_id);
+        latest = withGrayBox;
+        setSession(withGrayBox);
+      } catch (gbErr) {
+        console.warn('Gray-box test generation notice:', gbErr);
+      }
+      setStageIndex(6);
 
       try {
         const withOther = await runOtherTests(created.session_id);
@@ -234,7 +245,7 @@ export default function LiveLabPage() {
             : 'Other tests skipped.'
         );
       }
-      setStageIndex(6);
+      setStageIndex(7);
 
       try {
         const executed = await runExecuteTests(created.session_id);
@@ -243,7 +254,7 @@ export default function LiveLabPage() {
       } catch (execErr) {
         console.warn('Test execution notice:', execErr);
       }
-      setStageIndex(7);
+      setStageIndex(8);
 
       let covered = latest;
       try {
@@ -301,6 +312,7 @@ export default function LiveLabPage() {
     session?.requirement_analysis?.requirements || [];
   const whiteBoxTests = session?.white_box_tests?.test_cases?.length || 0;
   const blackBoxTests = session?.black_box_tests?.test_count || 0;
+  const grayBoxTests = session?.gray_box_tests?.test_count || 0;
   const failedTests = (session?.test_execution?.tests || []).filter(
     (t) => t.status === 'failed' || t.status === 'error'
   );
@@ -730,6 +742,39 @@ export default function LiveLabPage() {
                       <li key={c.case_id} className="truncate">{c.description}</li>
                     ))}
                   </ul>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+        {grayBoxTests > 0 && (
+          <div className="max-w-7xl mx-auto mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-foreground">Gray-Box Tests (Task 7)</h3>
+              <span className="flex items-center gap-1.5 text-green-500 text-sm">
+                <CheckCircle2 className="w-4 h-4" />
+                {grayBoxTests} requirement + branch cases
+                {session?.gray_box_tests?.generation_source
+                  ? ` · ${session.gray_box_tests.generation_source}`
+                  : ''}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(session?.gray_box_tests?.test_cases || []).slice(0, 12).map((test) => (
+                <motion.div
+                  key={test.case_id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-xl border border-purple-500/20 bg-purple-500/5"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-xs text-yellow-500">{test.requirement_id}</span>
+                    <span className="text-xs text-muted-foreground">{test.function_name}</span>
+                  </div>
+                  <p className="text-sm text-foreground truncate">{test.description}</p>
+                  {test.target_branch && (
+                    <p className="mt-2 text-xs text-muted-foreground truncate">{test.target_branch}</p>
+                  )}
                 </motion.div>
               ))}
             </div>

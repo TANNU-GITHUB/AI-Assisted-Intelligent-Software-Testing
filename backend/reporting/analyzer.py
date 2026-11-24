@@ -63,6 +63,9 @@ def _find_test_case_inputs(test_id: str, payload: dict) -> dict:
     elif "black_box" in tid:
         raw = (payload.get("black_box_tests") or {}).get("test_cases")
         cases = raw if isinstance(raw, list) else []
+    elif "gray_box" in tid:
+        raw = (payload.get("gray_box_tests") or {}).get("test_cases")
+        cases = raw if isinstance(raw, list) else []
     elif "integration" in tid:
         raw = (payload.get("other_tests") or {}).get("integration_tests")
         cases = raw if isinstance(raw, list) else []

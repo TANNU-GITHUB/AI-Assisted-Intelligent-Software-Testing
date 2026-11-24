@@ -181,6 +181,7 @@ def collected_requirement_ids(payload: dict[str, Any]) -> set[str]:
     for bucket in (
         (payload.get("white_box_tests") or {}).get("test_cases") or [],
         (payload.get("black_box_tests") or {}).get("test_cases") or [],
+        (payload.get("gray_box_tests") or {}).get("test_cases") or [],
         (payload.get("other_tests") or {}).get("integration_tests") or [],
         (payload.get("other_tests") or {}).get("negative_tests") or [],
     ):

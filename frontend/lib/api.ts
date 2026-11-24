@@ -42,6 +42,11 @@ export type SessionPayload = {
     test_count?: number;
     function_count?: number;
     files_written?: string[];
+    test_cases?: {
+      case_id: string;
+      description: string;
+      requirement_id?: string;
+    }[];
     functions?: {
       function: string;
       status: string;
@@ -111,6 +116,20 @@ export type SessionPayload = {
       cases?: { case_id: string; description: string; requirement_id: string }[];
     }[];
     test_cases?: unknown[];
+  } | null;
+  gray_box_tests?: {
+    test_count?: number;
+    requirement_count?: number;
+    function_count?: number;
+    generation_source?: string;
+    files_written?: string[];
+    test_cases?: {
+      case_id: string;
+      description: string;
+      requirement_id: string;
+      function_name: string;
+      target_branch?: string;
+    }[];
   } | null;
   other_tests?: {
     integration_count?: number;
@@ -221,6 +240,10 @@ export async function runWhiteBoxTests(sessionId: string): Promise<SessionPayloa
 
 export async function runBlackBoxTests(sessionId: string): Promise<SessionPayload> {
   return request(`/api/sessions/${sessionId}/black-box-tests`, { method: 'POST' });
+}
+
+export async function runGrayBoxTests(sessionId: string): Promise<SessionPayload> {
+  return request(`/api/sessions/${sessionId}/gray-box-tests`, { method: 'POST' });
 }
 
 export async function runOtherTests(sessionId: string): Promise<SessionPayload> {

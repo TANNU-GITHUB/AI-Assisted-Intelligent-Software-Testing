@@ -175,6 +175,7 @@ def create_session(
     regression_dir.mkdir(exist_ok=True)
     (folder / "tests" / "white_box").mkdir(parents=True, exist_ok=True)
     (folder / "tests" / "black_box").mkdir(parents=True, exist_ok=True)
+    (folder / "tests" / "gray_box").mkdir(parents=True, exist_ok=True)
 
     source_path = folder / "source.py"
     requirements_path = folder / "requirements.txt"

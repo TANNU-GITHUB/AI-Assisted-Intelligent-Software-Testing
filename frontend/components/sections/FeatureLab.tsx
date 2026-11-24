@@ -25,10 +25,10 @@ const features = [
   {
     id: 'dual',
     title: 'Dual Testing Strategy',
-    description: 'Tests split into White Box and Black Box streams simultaneously, covering both internal logic and external behavior.',
+    description: 'Tests split across White, Black, and Gray Box streams, covering internal logic, external behavior, and partial internals.',
     icon: GitBranch,
     visual: 'split',
-    details: ['White Box: internal logic', 'Black Box: external behavior', 'Parallel execution', 'Combined coverage'],
+    details: ['White Box: internal logic', 'Black Box: external behavior', 'Gray Box: branches + requirements', 'Combined coverage'],
   },
   {
     id: 'execution',

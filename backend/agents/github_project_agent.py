@@ -1,4 +1,4 @@
-"""Walk a connected GitHub repo and run white-box + black-box testing on it."""
+"""Walk a connected GitHub repo and run white-, gray-, and black-box testing on it."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from input_handler.handler import create_session, save_session, session_dir, ses
 from requirement_analysis.analyzer import analyze_session_requirements
 from test_generation.black_box import analyze_session_black_box
 from test_generation.gap_fill import analyze_session_gap_fill
+from test_generation.gray_box import analyze_session_gray_box
 from test_generation.other_tests import analyze_session_other_tests
 from test_generation.white_box import analyze_session_white_box
 
@@ -192,6 +193,7 @@ def run_github_project_agent(
     _run_stage("requirement_analysis", stages, lambda: analyze_session_requirements(session_id))
     _run_stage("white_box", stages, lambda: analyze_session_white_box(session_id))
     _run_stage("black_box", stages, lambda: analyze_session_black_box(session_id))
+    _run_stage("gray_box", stages, lambda: analyze_session_gray_box(session_id))
     _run_stage("other_tests", stages, lambda: analyze_session_other_tests(session_id))
     _run_stage("execute", stages, lambda: analyze_session_execution(session_id))
     _run_stage("coverage", stages, lambda: analyze_session_coverage(session_id))

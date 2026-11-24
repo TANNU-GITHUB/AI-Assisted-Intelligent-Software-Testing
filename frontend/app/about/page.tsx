@@ -36,7 +36,7 @@ const team = [
 const methodology = [
   { icon: Code2, title: 'Code-First Analysis', description: 'We start by understanding the actual source code structure, not just requirements documents.' },
   { icon: FileText, title: 'Requirement Mapping', description: 'Every requirement is traced to specific code paths, ensuring nothing is left untested.' },
-  { icon: FileCode2, title: 'Multi-Strategy Generation', description: 'Six testing strategies work in parallel: White Box, Black Box, Unit, Integration, Regression, and Negative.' },
+  { icon: FileCode2, title: 'Multi-Strategy Generation', description: 'Seven testing strategies work in parallel: White, Black, Gray, Unit, Integration, Regression, and Negative.' },
   { icon: MonitorPlay, title: 'Parallel Execution', description: 'Tests run in simulated browser environments simultaneously, dramatically reducing test time.' },
   { icon: Bug, title: 'Intelligent Detection', description: 'Failures are classified by root cause, severity, and affected module — not just pass/fail.' },
   { icon: FileBarChart, title: 'Actionable Reporting', description: 'Reports include traceability matrices, coverage gaps, and prioritized defect lists.' },

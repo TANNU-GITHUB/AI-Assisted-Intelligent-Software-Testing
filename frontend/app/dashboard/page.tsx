@@ -53,6 +53,7 @@ function summarize(session: SessionPayload | null) {
     (reqs.length ? 0.2 : 0) +
     ((session?.white_box_tests?.test_count || 0) > 0 ? 0.15 : 0) +
     ((session?.black_box_tests?.test_count || 0) > 0 ? 0.15 : 0) +
+    ((session?.gray_box_tests?.test_count || 0) > 0 ? 0.1 : 0) +
     ((session?.other_tests?.negative_count || 0) + (session?.other_tests?.integration_count || 0) > 0 ? 0.1 : 0) +
     (execution?.total ? 0.1 : 0) +
     (coveragePct != null ? 0.1 : 0)

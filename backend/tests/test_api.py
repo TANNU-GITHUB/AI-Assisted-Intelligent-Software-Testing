@@ -211,3 +211,22 @@ def test_white_box_endpoint(client, tmp_path, monkeypatch):
     generated = client.post(f"/api/sessions/{session_id}/white-box-tests", headers=headers)
     assert generated.status_code == 200
     assert generated.json()["white_box_tests"]["test_count"] >= 1
+
+
+def test_gray_box_endpoint(client, tmp_path, monkeypatch):
+    monkeypatch.setattr("input_handler.handler.SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr("test_generation.gray_box.llm_is_configured", lambda: False)
+    headers = register_user(client)
+
+    res = client.post(
+        "/api/sessions",
+        headers=headers,
+        files={"source_file": ("demo.py", b"def discount(price, is_member):\n    if is_member:\n        return price * 0.9\n    return price\n", "text/x-python")},
+        data={"requirements_text": "Members receive a discount.", "run_analysis": "false"},
+    )
+    session_id = res.json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/code-analysis", headers=headers)
+    client.post(f"/api/sessions/{session_id}/requirement-analysis", headers=headers)
+    generated = client.post(f"/api/sessions/{session_id}/gray-box-tests", headers=headers)
+    assert generated.status_code == 200
+    assert generated.json()["gray_box_tests"]["test_count"] >= 1
