@@ -1,197 +1,415 @@
 # AI-Assisted Intelligent Software Testing
 
-An AI-assisted testing tool that analyzes a Python source file and natural-language requirements, generates tests, executes them, measures coverage, and produces a report.
+An end-to-end testing application that accepts Python source code and natural-language requirements, analyzes both inputs, generates several kinds of pytest tests, executes the tests, measures line and branch coverage, closes detected coverage gaps, and produces an HTML report.
 
-> **Current scope:** Live Lab can test a single Python file, or — after GitHub access is granted — run a project agent that walks the repository, combines top-level Python functions, and runs white-box plus black-box testing on that combined project. It can also extract requirements from flowchart images and visual pages in PDFs. Class methods, non-Python languages, and true cross-package integration (real import graphs) are still limited.
+The application consists of a Next.js/React frontend and a FastAPI backend. It supports local Live Lab runs, document and diagram requirement extraction, local login and OAuth login, GitHub repository imports, and full GitHub repository analysis.
 
-## What the project does today
+## Current capabilities
 
-- Accepts a Python source file and requirements written in natural language, including PDF or Word (.doc / .docx) requirement documents, plus files imported from a connected GitHub account.
-- Extracts visual requirements from PNG, JPEG, GIF, or WEBP diagrams and from scanned or diagram-containing PDF pages using a configured NVIDIA vision model or local Ollama. PDFs are limited to 50 pages and four visual pages/elements per upload.
-- Can walk a connected GitHub repository, collect Python modules and requirement docs, and run the full white-box / black-box pipeline on the combined project.
-- Analyzes Python functions and branches using the built-in AST module.
-- Converts requirements into structured, traceable requirement records using NVIDIA NIM (with Ollama fallback) when configured, with a heuristic fallback for text requirements. Visual extraction failures are reported rather than replaced with fabricated requirements.
-- Generates white-box tests (code-structure driven), black-box tests (requirements and public API only), and additional negative and same-file integration-style tests.
-- Executes generated tests with pytest and measures coverage with coverage.py.
-- Stores run data in a session directory and generates a downloadable HTML report.
+- Upload or edit a Python `.py` file.
+- Enter requirements as text.
+- Extract requirements from PDF, Word (`.doc`/`.docx`), text, Markdown, and common document formats.
+- Extract requirements from PNG, JPEG, GIF, and WEBP diagrams or flowcharts.
+- Analyze Python functions, parameters, return types, branches, and cyclomatic complexity through the Python AST.
+- Convert requirements into `REQ-*` structured condition/result records.
+- Generate:
+  - white-box tests
+  - black-box tests
+  - gray-box tests
+  - same-file integration tests
+  - negative tests
+  - gap-fill tests for uncovered lines or untested requirements
+- Execute all generated tests with pytest.
+- Run branch-aware coverage with `coverage.py`.
+- Collect requirement traceability and failure diagnostics.
+- Download a generated HTML test report.
+- Store results in per-session folders and view them on the dashboard.
+- Sign in with a local account, Google OAuth, or GitHub OAuth.
+- Import a selected Python file and requirement file from a connected GitHub repository.
+- Run a repository project agent that flattens a Python subset into one combined source file and runs the full testing workflow.
 
-The current system does **not** execute the original package import graph as-is or perform mutation testing.
+## Technology stack
 
-## Architecture
+| Area | Technology |
+|---|---|
+| Frontend | Next.js 13 App Router, React 18, TypeScript, Tailwind CSS |
+| Frontend state/API | React hooks, browser local storage, Next.js rewrite proxy |
+| Backend | Python, FastAPI, Uvicorn |
+| Authentication | JWT bearer tokens, bcrypt, SQLite, Google OAuth, GitHub OAuth |
+| Source analysis | Python `ast` |
+| Requirement analysis | NVIDIA NIM, local Ollama, heuristic fallback |
+| Visual extraction | NVIDIA vision model, uploaded image/PDF processing |
+| Test generation | Python AST plus provider/heuristic case generation |
+| Test execution | pytest and `pytest-json-report` |
+| Coverage | `coverage.py` with branch tracking |
+| Reporting | Jinja2 HTML templates |
+| Session persistence | JSON manifests and files under `backend/sessions/` |
+| User persistence | SQLite at `backend/data/auth.db` |
 
-The application has a Next.js frontend and a FastAPI backend. The backend coordinates analysis and test generation, stores each run in a session directory, invokes pytest and coverage.py, and renders the final report. NVIDIA NIM and local Ollama provide optional AI-assisted requirement and test generation.
+## System architecture
 
-<!-- mermaid-checked: no \n, no em-dash/en-dash, no {} in labels, subgraphs are id["label"], arrows are -->|"label"|, all subgraphs closed by end, ids unique -->
-```mermaid
-flowchart TD
-    subgraph ClientLayer["Client"]
-        Browser["Web browser"]
-    end
-    subgraph FrontendLayer["Frontend"]
-        NextApp["Next.js and React Live Lab"]
-        ApiProxy["Next.js API proxy"]
-    end
-    subgraph BackendLayer["Backend"]
-        FastApi["FastAPI REST API"]
-        CodeAnalysis["Python AST analysis"]
-        RequirementAnalysis["Requirement analysis"]
-        TestGeneration["White-box and additional test generation"]
-        Execution["pytest and coverage.py"]
-        Reporting["HTML report generation"]
-        SessionStore[("Session files on disk")]
-    end
-    subgraph ExternalLayer["External services"]
-        NvidiaNim["NVIDIA NIM API"]
-        Ollama["Ollama local fallback"]
-    end
-
-    Browser -->|"uses"| NextApp
-    NextApp -->|"API requests"| ApiProxy
-    ApiProxy -->|"forwards requests"| FastApi
-    FastApi -->|"runs requested stage"| CodeAnalysis
-    FastApi -->|"runs requested stage"| RequirementAnalysis
-    RequirementAnalysis -.->|"optional AI calls"| NvidiaNim
-    RequirementAnalysis -.->|"fallback"| Ollama
-    FastApi -->|"runs requested stage"| TestGeneration
-    TestGeneration -.->|"optional AI calls"| NvidiaNim
-    TestGeneration -.->|"fallback"| Ollama
-    FastApi -->|"session data"| SessionStore
-    TestGeneration -->|"writes pytest files"| SessionStore
-    Execution -->|"reads generated tests"| SessionStore
-    FastApi -->|"runs execution and coverage"| Execution
-    Reporting -->|"reads results"| SessionStore
-    FastApi -->|"serves report"| Reporting
-    Browser -->|"downloads report"| FastApi
-```
-
-### Technology stack
-
-| Layer | Technology | Purpose |
-|---|---|---|
-| Frontend | Next.js 13, React 18, TypeScript | Live Lab interface and API proxy |
-| Backend | Python, FastAPI | Session and analysis API |
-| Code analysis | Python AST | Extracts function and branch information |
-| Requirement analysis | NVIDIA NIM + Ollama, with heuristic fallback | Structures natural-language requirements |
-| Test generation and execution | pytest | Generates and runs tests |
-| Coverage | coverage.py | Measures test coverage |
-| Reporting | Jinja2 and HTML | Builds downloadable session reports |
-| Persistence | Session files on disk | Stores source, requirements, generated tests, and results |
-| Frontend checks | Playwright | Smoke-tests the frontend and backend health integration |
-
-There is no database in the current workflow. Session data is saved under `backend/sessions/`. LLM calls use NVIDIA first, then Ollama; heuristic parsers and AST fallbacks apply when both are unavailable.
-
-### Component relationships
-
-<!-- mermaid-checked: no \n, no em-dash/en-dash, no {} in labels, subgraphs are id["label"], arrows are -->|"label"|, all subgraphs closed by end, ids unique -->
 ```mermaid
 flowchart LR
-    subgraph UiComponents["Presentation"]
-        UiLiveLab["Live Lab page"]
-        UiApi["Frontend API client"]
-    end
-    subgraph ApiComponents["API and orchestration"]
-        ApiRoutes["FastAPI routes"]
-    end
-    subgraph AnalysisComponents["Analysis and generation"]
-        AnalysisCode["Code analyzer"]
-        AnalysisRequirements["Requirement analyzer"]
-        AnalysisWhiteBox["White-box generator"]
-        AnalysisOther["Negative and integration-style generator"]
-    end
-    subgraph RuntimeComponents["Execution and output"]
-        RuntimeTests["Test and coverage runner"]
-        RuntimeReport["HTML report renderer"]
-        RuntimeSessions[("Session storage")]
+    Browser["Browser"]
+
+    subgraph Frontend["Next.js frontend :3000"]
+        Pages["App Router pages<br/>Live Lab, Dashboard, Login, OAuth callbacks, About"]
+        Middleware["Next.js middleware<br/>protect Live Lab and Dashboard"]
+        ApiClient["Frontend API client"]
+        Proxy["/api/* rewrite"]
+        GithubPicker["GitHub repository picker"]
+        Pages --> Middleware
+        Pages --> ApiClient
+        ApiClient --> Proxy
+        Pages --> GithubPicker
     end
 
-    UiLiveLab -->|"calls"| UiApi
-    UiApi -->|"HTTP requests"| ApiRoutes
-    ApiRoutes -->|"analyzes source"| AnalysisCode
-    ApiRoutes -->|"structures requirements"| AnalysisRequirements
-    ApiRoutes -->|"generates unit tests"| AnalysisWhiteBox
-    ApiRoutes -->|"generates additional tests"| AnalysisOther
-    ApiRoutes -->|"executes suite and measures coverage"| RuntimeTests
-    ApiRoutes -->|"persists session"| RuntimeSessions
-    AnalysisWhiteBox -->|"writes generated files"| RuntimeSessions
-    AnalysisOther -->|"writes generated files"| RuntimeSessions
-    RuntimeTests -->|"reads and records results"| RuntimeSessions
-    RuntimeReport -->|"reads session results"| RuntimeSessions
-    ApiRoutes -->|"returns report"| RuntimeReport
+    subgraph Backend["FastAPI backend :8000"]
+        App["app.py<br/>REST routes and CORS"]
+
+        subgraph Auth["Authentication and identity"]
+            AuthRoutes["Local auth routes"]
+            Google["Google OAuth"]
+            GitHub["GitHub OAuth"]
+            Security["JWT and bcrypt"]
+        end
+
+        subgraph Inputs["Input and documents"]
+            Upload["Source/requirements upload"]
+            Document["PDF/Word/text extraction"]
+            Diagram["Diagram/PDF vision extraction"]
+        end
+
+        subgraph Analysis["Analysis engine"]
+            Code["Python AST code analysis"]
+            Requirements["Requirement normalization"]
+            Generators["White, black, gray, integration, negative, and gap-fill generators"]
+            Execution["pytest execution"]
+            Coverage["coverage.py coverage"]
+            Report["HTML report renderer"]
+        end
+
+        subgraph GitHubAgent["GitHub project agent"]
+            Repo["Repository collection"]
+            Flatten["Python module flattening"]
+            Inventory["Project inventory"]
+        end
+
+        App --> Upload
+        App --> AuthRoutes
+        App --> Repo
+        Upload --> Code
+        Upload --> Requirements
+        Document --> Requirements
+        Diagram --> Requirements
+        Code --> Generators
+        Requirements --> Generators
+        Generators --> Execution
+        Execution --> Coverage
+        Coverage --> Report
+        Repo --> Flatten
+        Flatten --> Inventory
+        Inventory --> Code
+    end
+
+    subgraph Storage["Local persistence"]
+        AuthDB[("SQLite<br/>backend/data/auth.db")]
+        Sessions["Session folders<br/>backend/sessions/<session_id>/"]
+        Manifest["session.json"]
+        Files["source.py<br/>requirements.txt<br/>tests/<br/>pytest/coverage reports"]
+        Sessions --> Manifest
+        Sessions --> Files
+    end
+
+    subgraph Providers["External/provider services"]
+        Nvidia["NVIDIA NIM text and vision"]
+        Ollama["Local Ollama fallback"]
+        GoogleAPI["Google OAuth"]
+        GitHubAPI["GitHub OAuth and API"]
+    end
+
+    Browser --> Middleware
+    Proxy -->|"REST JSON or HTML"| App
+    AuthRoutes --> AuthDB
+    Google --> GoogleAPI
+    GitHub --> GitHubAPI
+    Repo --> GitHubAPI
+    Requirements -.->|"text generation"| Nvidia
+    Requirements -.->|"fallback"| Ollama
+    Generators -.->|"test generation"| Nvidia
+    Generators -.->|"fallback"| Ollama
+    Document -.->|"optional vision"| Nvidia
+    Diagram -.->|"vision"| Nvidia
+    Diagram -.->|"fallback"| Ollama
+    App --> Sessions
+    Report --> Sessions
 ```
 
-## Workflow
+### Component responsibilities
 
-The Live Lab calls the backend in stages. Users can edit the source and requirements in the interface or upload a `.py` file.
+| Component | Responsibility |
+|---|---|
+| `frontend/app/live-lab/page.tsx` | Main interactive pipeline UI, source/requirements editors, uploads, stage execution, GitHub picker |
+| `frontend/app/dashboard/page.tsx` | Loads a session and displays metrics, source, functions, requirements, tests, coverage, and report download |
+| `frontend/lib/api.ts` | Browser API wrappers, auth headers, session storage, and report download |
+| `frontend/middleware.ts` | Redirects unauthenticated Live Lab and Dashboard requests to `/login` |
+| `backend/app.py` | Public health/input/session/report routes and stage-specific REST endpoints |
+| `backend/input_handler/` | Input validation, session creation, manifest locking, and source/requirements persistence |
+| `backend/code_analysis/analyzer.py` | Extracts functions, branches, complexity, and source structure |
+| `backend/requirement_analysis/` | Converts requirements to structured `REQ-*` records |
+| `backend/test_generation/` | Generates white-box, black-box, gray-box, integration, negative, and gap-fill tests |
+| `backend/execution/` | Runs pytest, builds diagnostics, measures branch coverage, and computes requirement coverage |
+| `backend/reporting/` | Builds and serves the downloadable HTML report |
+| `backend/auth/` | Local, Google, GitHub authentication and encrypted GitHub-token storage |
+| `backend/agents/` | Repository collection, source flattening, and project-agent orchestration |
 
-<!-- mermaid-checked: no \n, no em-dash/en-dash, no {} in labels, subgraphs are id["label"], arrows are -->|"label"|, all subgraphs closed by end, ids unique -->
-```mermaid
-flowchart TD
-    FlowInput["User provides Python file and requirements"]
-    FlowSession["Create session and save inputs"]
-    FlowCode["Analyze functions and branches"]
-    FlowRequirements["Structure requirements"]
-    FlowWhiteBox["Generate white-box tests"]
-    FlowAdditional["Generate negative and same-file integration-style tests"]
-    FlowExecute["Execute generated tests with pytest"]
-    FlowCoverage["Measure coverage"]
-    FlowReport["Generate downloadable HTML report"]
+## End-to-end workflow
 
-    FlowInput -->|"submit"| FlowSession
-    FlowSession -->|"analyze source"| FlowCode
-    FlowCode -->|"analyze behavior"| FlowRequirements
-    FlowRequirements -->|"test targets"| FlowWhiteBox
-    FlowWhiteBox -->|"extend test suite"| FlowAdditional
-    FlowAdditional -->|"run suite"| FlowExecute
-    FlowExecute -->|"collect results"| FlowCoverage
-    FlowCoverage -->|"summarize"| FlowReport
+### 1. Authentication
+
+1. The frontend checks whether protected routes have an authentication cookie.
+2. The middleware redirects `/live-lab` and `/dashboard` to `/login` when no cookie exists.
+3. A local account, Google callback, or GitHub callback creates a JWT.
+4. The frontend stores the token/cookie and sends bearer authentication on protected API requests.
+5. FastAPI validates the current user and restricts session access to the session owner.
+
+### 2. Input and session creation
+
+1. The user opens the Live Lab and selects a Python file or uses the sample.
+2. The user enters requirements directly or uploads/extracts requirements.
+3. The browser submits the source file and requirements to `POST /api/sessions`.
+4. The backend validates that the source is a non-empty `.py` file and requirements are non-empty.
+5. The source is limited to 350,000 characters and requirements to 50,000 characters.
+6. The backend creates `backend/sessions/<session_id>/`, writes `source.py`, `requirements.txt`, `session.json`, and creates test/log directories.
+7. The session ID is saved in browser local storage and returned to the dashboard.
+
+### 3. Document or diagram extraction
+
+For uploaded requirements:
+
+- PDF, Word, text, and Markdown files pass through the document extractor.
+- `.doc` is handled through available document conversion support.
+- Diagram images pass through the vision extractor.
+- Scanned or diagram-containing PDFs may be processed by visual extraction.
+- Extracted text is inserted into the requirements editor before normal analysis.
+
+### 4. Code analysis
+
+`POST /api/sessions/{session_id}/code-analysis`:
+
+1. Loads `source.py`.
+2. Parses it with Python `ast`.
+3. Finds top-level functions and supported function structure.
+4. Records names, parameters, return annotations, source line ranges, branches, branch count, and cyclomatic complexity.
+5. Saves `code_analysis` in `session.json`.
+
+Class methods and complex package/import graphs are not treated as a complete cross-package runtime model.
+
+### 5. Requirement analysis
+
+`POST /api/sessions/{session_id}/requirement-analysis`:
+
+1. Loads requirements text.
+2. Sends a JSON-oriented prompt to NVIDIA NIM when configured.
+3. Falls back to local Ollama when NVIDIA is unavailable or exhausted.
+4. Uses a deterministic heuristic parser if no usable LLM response is available.
+5. Normalizes records to `REQ-01`, `REQ-02`, and subsequent IDs.
+6. Stores condition, expected result, and source excerpt for requirement traceability.
+
+### 6. Test generation
+
+The Live Lab runs each test generator in sequence:
+
+| Stage | Endpoint | Purpose |
+|---|---|---|
+| White-box | `/white-box-tests` | Generates cases from AST functions and branches |
+| Black-box | `/black-box-tests` | Generates behavior-oriented cases from structured requirements |
+| Gray-box | `/gray-box-tests` | Combines requirement context with source/branch targets |
+| Other tests | `/other-tests` | Generates same-file integration and negative tests |
+| Gap-fill | `/gap-fill-tests` | Targets uncovered lines and requirements that are not tested |
+
+Generated tests are written beneath `backend/sessions/<session_id>/tests/`. Unsafe or malformed generated inputs are validated before pytest code is emitted.
+
+### 7. Test execution
+
+`POST /api/sessions/{session_id}/execute-tests`:
+
+1. Finds all test directories under the session.
+2. Runs pytest recursively for that session.
+3. Requests a pytest JSON report through `pytest-json-report`.
+4. Captures pass/fail/error counts, durations, requirement IDs, error text, and test node IDs.
+5. Builds failure diagnostics and requirement/requirement-coverage rows.
+6. Saves `test_execution` and requirement coverage into `session.json`.
+
+### 8. Coverage analysis
+
+`POST /api/sessions/{session_id}/coverage`:
+
+1. Removes previous coverage data.
+2. Runs `coverage run --branch --source=source -m pytest`.
+3. Exports `coverage.json`.
+4. Calculates overall line and branch coverage.
+5. Lists missing source lines.
+6. Combines coverage data with analyzed function/branch metadata.
+7. Saves `coverage`, `requirement_coverage`, and source-line status.
+
+### 9. Gap-fill loop
+
+After initial execution and coverage, the frontend checks whether any line or requirement remains uncovered.
+
+If gaps exist:
+
+1. The gap-fill generator creates additional test cases.
+2. pytest executes the complete test suite again.
+3. Coverage is measured again.
+4. The latest session payload replaces the prior dashboard/report data.
+
+The gap-fill pass is limited to detected source lines and untested requirements in the current session.
+
+### 10. Reporting
+
+The dashboard reads the latest session by URL or browser local storage.
+
+`GET /api/sessions/{session_id}/report`:
+
+1. Loads the latest session manifest and source.
+2. Builds traceability, summary metrics, failures, source-line status, and coverage sections.
+3. Returns a downloadable HTML document named `test-report-<session_id>.html`.
+
+## GitHub workflows
+
+### Import one file pair
+
+1. The user connects GitHub through OAuth.
+2. The frontend lists repositories available to the account.
+3. The user browses repository contents.
+4. The backend selects a `.py` source file and an optional requirement file.
+5. GitHub file contents are decoded and sent to the Live Lab editor.
+6. The standard local Live Lab workflow then creates and analyzes the session.
+
+### Run the repository project agent
+
+`POST /api/github/project-agent`:
+
+1. Fetches repository metadata and the recursive Git tree.
+2. Filters out irrelevant paths and unsupported/generated content.
+3. Selects up to 80 Python files and up to 20 requirement/specification files.
+4. Downloads files up to the configured blob limit.
+5. Flattens selected Python modules into a combined Python source file.
+6. Combines requirement documents or derives fallback requirements from discovered functions.
+7. Creates a normal owned analysis session.
+8. Runs code analysis, requirement analysis, white-box, black-box, gray-box, and other-test generation.
+9. Executes tests and coverage.
+10. Runs the gap-fill loop when coverage or requirement gaps remain.
+11. Stores a `project/inventory.json` describing included/skipped modules and selected requirement files.
+12. Saves GitHub project metadata and stage statuses in `github_agent`.
+
+The project agent analyzes a bounded flattened subset, not a complete runtime import graph. Its cross-module behavior is therefore limited to what the flattening and test generators can represent.
+
+## Session storage
+
+Each session folder contains:
+
+```text
+backend/sessions/<session_id>/
+  session.json
+  source.py
+  requirements.txt
+  logs/
+  regression/
+  project/
+  tests/
+    white_box/
+    black_box/
+    gray_box/
+    integration/
+    negative/
+    gap_fill/
+  pytest_report.json
+  coverage.json
+  .coverage
 ```
 
-Generated additional integration-style tests currently target interactions between functions in the uploaded source file. This does not represent integration testing across a full repository.
+The session manifest is updated atomically and guarded with a file lock. Session listing and retrieval are restricted to the authenticated owner for protected API routes.
+
+## API overview
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/health` and `/api/health` | Backend health |
+| `GET` | `/api/status/llm` | Provider/configuration status |
+| `GET` | `/api/examples` | Load sample source and requirements |
+| `POST` | `/api/requirements/extract` | Extract requirements from a document |
+| `POST` | `/api/requirements/extract-diagram` | Extract requirements from an image or visual PDF |
+| `GET/POST` | `/api/sessions` | List/create owned sessions |
+| `GET/PUT` | `/api/sessions/{id}` and `/source` | Read/update a session |
+| `GET` | `/api/sessions/{id}/report` | Download HTML report |
+| `POST` | `/api/sessions/{id}/code-analysis` | Analyze Python AST |
+| `POST` | `/api/sessions/{id}/requirement-analysis` | Structure requirements |
+| `POST` | `/api/sessions/{id}/{test-type}-tests` | Run a test-generation stage |
+| `POST` | `/api/sessions/{id}/execute-tests` | Run pytest |
+| `POST` | `/api/sessions/{id}/coverage` | Measure coverage |
+| `POST` | `/api/sessions/{id}/gap-fill-tests` | Generate gap-fill tests |
+| `POST/GET/DELETE` | `/api/github/*` | GitHub OAuth, repository browsing, import, and project agent |
+
+Authentication routes include local registration/login, Google OAuth, current-user lookup, and logout behavior in `backend/auth/routes.py`.
 
 ## Running locally
 
-You need Python and Node.js/npm installed.
+### Prerequisites
 
-### 1. Configure the backend
+- Python 3.11+ is recommended.
+- Node.js and npm.
+- An NVIDIA API key, or Ollama, for provider-assisted generation.
+- Playwright browsers are only required for frontend E2E tests.
 
-From the repository root, create and activate a virtual environment, then install the backend requirements:
+### Backend setup
+
+From the repository root:
 
 ```powershell
 py -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install -r backend\requirements.txt
+python -m pip install -r backend\requirements.txt
 ```
 
-Copy `backend\.env.example` to `backend\.env` and set a persistent, randomly generated `JWT_SECRET`. Generate one with:
+Create `backend/.env` from the existing values or the README template below. The backend requires a persistent secret of at least 32 bytes:
+
+```env
+JWT_SECRET=<generated-random-secret>
+NVIDIA_API_KEY=
+NVIDIA_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b
+NVIDIA_VISION_MODEL=nvidia/nemotron-3.5-super-vl-120b-a12b
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2
+FRONTEND_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GITHUB_REDIRECT_URI=http://localhost:3000/auth/github/callback
+```
+
+Generate a stable JWT secret:
 
 ```powershell
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Paste the generated value into `backend\.env`. Keep this secret stable: changing it invalidates existing login tokens and prevents decrypting stored GitHub OAuth tokens. Add provider keys privately as needed:
-
-```env
-JWT_SECRET=<generated-random-secret>
-NVIDIA_API_KEY=your_nvidia_key_here
-NVIDIA_VISION_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
-GEMINI_API_KEY=
-GEMINI_VISION_MODEL=gemini-4-hydrogen
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=llama3.2
-```
-
-Image analysis tries NVIDIA, then Gemini when `GEMINI_API_KEY` is configured, then local Ollama. Gemini image requests use `store=false`, but image bytes are still sent to Google's API for processing. The NVIDIA vision model uses the same backend-only `NVIDIA_API_KEY` as the text model. Do not commit `.env` files, JWT secrets, or API keys. The backend refuses to start if `JWT_SECRET` is missing, uses the known default, or is shorter than 32 bytes. If no text LLM is configured, text requirement parsing uses a heuristic fallback.
-
-Start the backend from the `backend` directory:
+Start the backend:
 
 ```powershell
 cd backend
 ..\venv\Scripts\python.exe -m uvicorn app:app --reload --port 8000
 ```
 
-### 2. Start the frontend
+The backend health endpoint should be available at `http://127.0.0.1:8000/health`.
 
-In another terminal, from the repository root:
+### Frontend setup
+
+In a second terminal:
 
 ```powershell
 cd frontend
@@ -199,35 +417,31 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000/live-lab](http://localhost:3000/live-lab). By default, the Next.js app forwards `/api/*` requests to `http://127.0.0.1:8000`. Set `API_PROXY_TARGET` if the backend runs at a different address.
+Open `http://localhost:3000/live-lab`.
 
-Run an analysis in the Live Lab, then view or download the generated report from the results/dashboard flow.
+The Next.js server proxies `/api/*` to `http://127.0.0.1:8000` by default. Set `API_PROXY_TARGET` to override it.
 
 ## Tests
 
-Run backend tests from the repository root:
+Backend tests:
 
 ```powershell
-Set-Location backend
+cd backend
 ..\venv\Scripts\python.exe -m pytest -q
 ```
 
-Frontend Playwright smoke tests are available in the `frontend` directory:
+Frontend smoke tests:
 
 ```powershell
+cd frontend
 npm run test:e2e:smoke
 ```
 
-The smoke tests check basic frontend pages and can check backend health when the backend is available.
+## Known scope limits
 
-## Future scope
-
-These are planned extensions, not features in the current user-facing workflow:
-
-- **GitHub-based repository integration testing:** The project agent now walks a connected repo and tests combined top-level functions. Running tests against the original package layout and import graph remains future work.
-- **Jev semantic UI testing:** The repository contains an internal Jev prototype, but it is not part of the current demo or user-facing workflow.
-- **Broader testing improvements:** Additional languages, mutation testing, and coverage-guided iterative test refinement may be considered as future work.
-
-## Project status
-
-This project is being developed as a final-year B.Tech major project by a team of three students. The current prototype focuses on Python source analysis and unit-test generation.
+- The system primarily supports Python source files and top-level functions.
+- It does not execute the original repository import graph as-is.
+- The GitHub project agent uses an 80-file/20-document bounded flattening step.
+- Cross-package integration and class-method-oriented generation are limited.
+- Provider-assisted results depend on API availability and local Ollama status.
+- If no text provider is usable, requirement and test stages use heuristic/static fallbacks where implemented.
