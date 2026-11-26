@@ -298,3 +298,12 @@ def test_reflow_joins_pdf_wrapped_single_words_and_preserves_bullets():
     doc.close()
     extracted = extract_requirements_text("points.pdf", pdf_raw)
     assert len(extracted.splitlines()) == 3
+
+    # Distinct requirement lines starting with lowercase snake_case function names must stay separate.
+    fn_prefixed = (
+        "calculate_electricity_bill must raise ValueError when units < 0.\n"
+        "calculate_electricity_bill returns 550.0 when units == 100 and is_commercial is False.\n"
+        "calculate_water_bill must raise ValueError when liters < 0.\n"
+        "calculate_water_bill must raise ValueError when liters > 10000.\n"
+    )
+    assert len(reflow_requirement_text(fn_prefixed).splitlines()) == 4

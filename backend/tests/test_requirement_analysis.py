@@ -180,3 +180,24 @@ def test_splits_inline_numbered_list_with_zero_width_space_even_when_llm_returns
         llm_call=lambda *_args: partial_llm,
     )
     assert result["requirement_count"] == 3
+
+
+def test_lowercase_function_lines_are_not_merged_into_req01():
+    text = (
+        "calculate_electricity_bill must raise ValueError when units < 0.\n"
+        "calculate_electricity_bill returns 550.0 when units == 100 and is_commercial is False.\n"
+        "calculate_water_bill must raise ValueError when liters < 0.\n"
+        "calculate_water_bill must raise ValueError when liters > 10000.\n"
+    )
+    result = analyze_requirements(
+        text,
+        api_key="",
+        llm_call=lambda *_args: (_ for _ in ()).throw(RuntimeError("offline")),
+    )
+    assert result["requirement_count"] == 4
+    assert [r["requirement_id"] for r in result["requirements"]] == [
+        "REQ-01",
+        "REQ-02",
+        "REQ-03",
+        "REQ-04",
+    ]

@@ -191,17 +191,17 @@ def reflow_requirement_text(text: str) -> str:
         prev_ends_sentence = prev_body.endswith((".", "!", "?"))
         prev_last_word = prev_body.split()[-1].rstrip(",;").lower() if prev_body.split() else ""
         is_hyphen_wrap = prev.endswith("-") and line[:1].islower()
-        starts_continuation = (
-            line[0].islower()
-            or line[0] in ",.;:)]}%"
-            or (
-                not prev_ends_sentence
-                and bool(re.match(r"^(?:\d+%|\$\d+|\d+\b)", line))
+        starts_with_fn_ident = bool(re.match(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b", line))
+        starts_continuation = line[0] in ",.;:)]}%" or (
+            not prev_ends_sentence
+            and (
+                (line[0].islower() and not starts_with_fn_ident)
+                or bool(re.match(r"^(?:\d+%|\$\d+|\d+\b)", line))
             )
         )
         short_fragment = not prev_ends_sentence and (
-            len(prev_body.split()) <= 2
-            or len(line.split()) <= 2
+            (len(prev_body.split()) <= 2 and not starts_with_fn_ident)
+            or (len(line.split()) <= 2 and not starts_with_fn_ident)
             or prev_last_word in _DANGLING_END_WORDS
         )
 
@@ -235,10 +235,10 @@ def clean_requirement_lines(text: str) -> list[str]:
         if len(words) < 2 and not re.search(r"[<>=]", body):
             fallback_single_words.append(body)
             continue
-        if len(words) > 6 and re.search(r"[.!?]\s+[A-Z]", body):
+        if len(words) > 6 and re.search(r"[.!?]\s+[A-Za-z]", body):
             sub_sentences = [
                 s.strip()
-                for s in re.split(r"(?<=[.!?])\s+(?=[A-Z])", body)
+                for s in re.split(r"(?<=[.!?])\s+(?=[A-Za-z])", body)
                 if s.strip() and len(s.split()) >= 2
             ]
             if len(sub_sentences) > 1:
