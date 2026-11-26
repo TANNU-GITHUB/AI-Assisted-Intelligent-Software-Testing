@@ -234,6 +234,24 @@ def analyze_requirements(
             items = _heuristic_requirements(text)
             fallback_reason = str(retry_exc) or str(exc)
 
+    # Ensure no distinct requirement lines are dropped if the model returned only a subset
+    text_lines = [l.strip() for l in text.splitlines() if l.strip() and not l.strip().startswith("#") and not l.lower().startswith("pdf page")]
+    if len(text_lines) > len(items) and len(text_lines) >= 2:
+        missing_lines = []
+        for line in text_lines:
+            low_line = line.lower()
+            if not any(
+                low_line in (item.get("condition", "") + " " + item.get("source_excerpt", "") + " " + item.get("expected_result", "")).lower()
+                for item in items
+            ):
+                missing_lines.append(line)
+        if missing_lines:
+            heuristic_extras = _heuristic_requirements("\n".join(missing_lines))
+            for h in heuristic_extras:
+                items.append(h)
+            for idx, item in enumerate(items, start=1):
+                item["requirement_id"] = f"REQ-{idx:02d}"
+
     model_used = (
         getattr(_call_llm, "last_model_used", model)
         if llm_call is _call_llm and not fallback_reason

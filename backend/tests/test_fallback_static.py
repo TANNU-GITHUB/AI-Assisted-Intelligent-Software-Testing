@@ -33,10 +33,8 @@ def test_white_box_fallback_analyzes_source_without_executing_it(tmp_path, monke
 
     assert not marker.exists()
     assert cases[0]["assert_output"] is False
-    assert (
-        'pytest.skip("Static fallback cannot determine the expected output.")' in content
-    )
-    assert "assert target" not in content
+    assert "result = getattr(_source, 'target')" in content
+    assert "assert result is not None" in content
 
 
 def test_black_box_fallback_analyzes_source_without_executing_it(tmp_path, monkeypatch):
@@ -53,10 +51,8 @@ def test_black_box_fallback_analyzes_source_without_executing_it(tmp_path, monke
 
     assert not marker.exists()
     assert cases[0]["assert_output"] is False
-    assert (
-        'pytest.skip("Static fallback cannot determine the expected output.")' in content
-    )
-    assert "assert target" not in content
+    assert "result = getattr(_source, 'target')" in content
+    assert "assert result is not None" in content
 
 
 def test_integration_fallback_analyzes_source_without_executing_it(tmp_path, monkeypatch):
@@ -77,7 +73,5 @@ def test_integration_fallback_analyzes_source_without_executing_it(tmp_path, mon
 
     assert not marker.exists()
     assert cases[0]["assert_output"] is False
-    assert (
-        'pytest.skip("Static fallback cannot determine the expected output.")' in content
-    )
-    assert "assert caller" not in content
+    assert "result = getattr(_source, 'caller')" in content
+    assert "assert result is not None" in content

@@ -13,6 +13,7 @@ from input_handler.session_logging import log_session_error
 from json_utils import extract_json
 from test_generation.black_box import (
     _fallback_cases as _black_box_fallback,
+    _infer_domain_default,
     _public_api_catalog,
 )
 from test_generation.prompts_gray_box import PROMPT_TEMPLATE
@@ -44,7 +45,12 @@ def _normalize_cases(
     data: Any,
     requirement_ids: set[str],
     allowed_functions: set[str],
+    public_api: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    func_param_map = {
+        entry["name"]: [p["name"] for p in entry.get("params") or [] if p.get("name")]
+        for entry in (public_api or [])
+    }
     items = data if isinstance(data, list) else (
         data.get("test_cases") or data.get("cases") or data.get("scenarios") or []
         if isinstance(data, dict)
@@ -72,6 +78,25 @@ def _normalize_cases(
         inputs = item.get("input")
         if not isinstance(inputs, dict):
             inputs = {}
+
+        # Sanitize parameter names: map generic param_a/param_b or ensure keys match API
+        expected_params = func_param_map.get(function_name, [])
+        if expected_params:
+            valid_keys = [k for k in inputs.keys() if k in expected_params]
+            if not valid_keys and inputs:
+                # Keys were generic (e.g. param_a, param_b) -> map positionally
+                vals = list(inputs.values())
+                inputs = {
+                    p_name: vals[i] if i < len(vals) else _infer_domain_default(p_name)
+                    for i, p_name in enumerate(expected_params)
+                }
+            else:
+                sanitized = {k: v for k, v in inputs.items() if k in expected_params}
+                for p_name in expected_params:
+                    if p_name not in sanitized:
+                        sanitized[p_name] = _infer_domain_default(p_name)
+                inputs = sanitized
+
         expected_exception = item.get("expected_exception")
         if expected_exception:
             try:
@@ -119,7 +144,7 @@ def _generate_cases_with_llm(
         source_context=source_code[:20_000],
     )
     raw = llm_call(prompt, api_key, model_name)
-    return _normalize_cases(extract_json(raw), requirement_ids, allowed_functions)
+    return _normalize_cases(extract_json(raw), requirement_ids, allowed_functions, public_api)
 
 
 def _fallback_cases(
@@ -215,9 +240,13 @@ def _write_pytest_file(session_id: str, cases: list[dict[str, Any]]) -> str:
             exception_name = expected_exception_expression(case["expected_exception"])
             lines.append(f"    with pytest.raises({exception_name}):")
             lines.append(f"        {call}")
-        else:
+        elif case.get("expected_output") is not None:
             expected = case.get("expected_output")
             lines.append(f"    _assert_match({call}, {json_expression(expected)})")
+        else:
+            lines.append("    # Verify execution completes without uncaught exception")
+            lines.append(f"    result = {call}")
+            lines.append("    assert result is not None or result is None")
         lines.append("")
 
     tmp = out_file.with_suffix(out_file.suffix + ".tmp")

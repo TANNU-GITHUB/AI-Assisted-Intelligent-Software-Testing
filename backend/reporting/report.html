@@ -3,181 +3,744 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Test Report - {{ session_id }}</title>
+  <title>Software Test Report - {{ session_id }}</title>
   <style>
-    :root { color-scheme: light; font-family: Arial, sans-serif; color: #18212b; background: #f3f5f7; }
-    body { margin: 0; padding: 28px; }
-    main { max-width: 1120px; margin: auto; }
-    h1 { margin: 0 0 6px; font-size: 28px; }
-    h2 { margin: 28px 0 10px; font-size: 18px; }
-    .meta, .muted { color: #586574; font-size: 13px; }
-    .summary { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 10px; margin-top: 22px; }
-    .metric { background: white; border: 1px solid #dce2e8; border-radius: 6px; padding: 14px; }
-    .metric strong { display: block; font-size: 22px; }
-    .metric span { color: #586574; font-size: 12px; }
-    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #dce2e8; }
-    th, td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid #e7ebef; font-size: 13px; }
-    th { background: #eaf0f4; font-weight: 600; }
-    .pass { color: #146c43; font-weight: 700; }
-    .fail { color: #b42318; font-weight: 700; }
-    .flaky { color: #8a4b08; font-weight: 700; }
-    .warning { padding: 10px 12px; margin: 8px 0; border-left: 3px solid #d97706; background: #fff7e6; color: #713f12; }
-    pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; font: 12px/1.45 Consolas, monospace; }
-    .detail-block { margin-top: 8px; padding: 8px 10px; border-radius: 4px; font-size: 12px; }
-    .detail-inputs { background: #f0f4ff; border-left: 3px solid #4f46e5; }
-    .detail-exception { background: #fff0f0; border-left: 3px solid #b42318; }
-    .detail-line { background: #f5f5f5; border-left: 3px solid #64748b; }
-    .detail-block strong { display: block; margin-bottom: 4px; color: #374151; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
-    .input-table { width: auto; border: none; margin: 0; }
-    .input-table td { padding: 2px 8px 2px 0; border: none; font-family: Consolas, monospace; font-size: 12px; }
-    .input-table td:first-child { color: #586574; font-weight: 600; }
-    code.exc { background: #fde8e8; color: #b42318; padding: 2px 5px; border-radius: 3px; font-size: 12px; }
-    code.line { background: #e9edf0; padding: 2px 5px; border-radius: 3px; font-size: 12px; }
-    @media (max-width: 700px) { body { padding: 14px; } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } table { display: block; overflow-x: auto; } }
-    @media print { body { padding: 0; background: white; } .metric, table { break-inside: avoid; } }
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --primary: #0284c7;
+      --success: #16a34a;
+      --success-bg: #f0fdf4;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --warning: #d97706;
+      --warning-bg: #fffbeb;
+      --info-bg: #eff6ff;
+      --code-bg: #f1f5f9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+    }
+    main { max-width: 1200px; margin: 0 auto; }
+    
+    /* Header */
+    .header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 28px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .header-title h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-title .tag {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+    .meta { font-size: 13px; color: var(--text-muted); }
+    .session-badge {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: var(--code-bg);
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    /* KPI Summary Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .kpi-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .kpi-value {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .kpi-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .val-pass { color: var(--success); }
+    .val-fail { color: var(--danger); }
+    .val-warn { color: var(--warning); }
+
+    /* Section styling */
+    .section-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 28px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .section-header {
+      padding: 16px 24px;
+      background: #fdfefe;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-header h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-desc {
+      padding: 12px 24px;
+      background: var(--info-bg);
+      border-bottom: 1px solid #dbeafe;
+      font-size: 13px;
+      color: #1e40af;
+    }
+    .table-container {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: #475569;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fbfcfd; }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-pass { background: var(--success-bg); color: var(--success); border: 1px solid #bbf7d0; }
+    .badge-fail { background: var(--danger-bg); color: var(--danger); border: 1px solid #fecaca; }
+    .badge-warn { background: var(--warning-bg); color: var(--warning); border: 1px solid #fde68a; }
+    .badge-gray { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
+    .badge-wb { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; }
+    .badge-bb { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+    .badge-integ { background: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff; }
+    .badge-neg { background: #ffedd5; color: #c2410c; border: 1px solid #fed7aa; }
+
+    /* Monospace & Code */
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+    .inputs-box {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11.5px;
+      line-height: 1.45;
+      margin-top: 4px;
+    }
+    .inputs-box .param-key { color: #64748b; font-weight: 600; }
+    .inputs-box .param-val { color: #0f172a; font-weight: 500; }
+
+    /* Failure diagnostic boxes */
+    .defect-card {
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      background: #fff;
+      margin: 16px 20px;
+      overflow: hidden;
+    }
+    .defect-card-header {
+      background: #fef2f2;
+      padding: 10px 16px;
+      border-bottom: 1px solid #fecaca;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .defect-card-body {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 800px) {
+      .defect-card-body { grid-template-columns: 1fr; }
+    }
+    .diag-box {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 12px;
+    }
+    .diag-box-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+    .fix-box {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: #166534;
+    }
+
+    /* Source code coverage listing */
+    .source-viewer {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 16px;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .source-line { display: flex; }
+    .line-no { width: 44px; color: #64748b; text-align: right; padding-right: 16px; user-select: none; }
+    .line-symbol { display: inline-block; width: 16px; text-align: center; }
+    .line-content { flex: 1; white-space: pre-wrap; }
+    .line-missed { background: rgba(220, 38, 38, 0.25); color: #fca5a5; }
+    .line-covered { color: #86efac; }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .section-card { box-shadow: none; break-inside: avoid; }
+    }
   </style>
 </head>
 <body>
 <main>
-  <h1>Software Test Report</h1>
-  <div class="meta">Session {{ session_id }}{% if generated_at %} · Generated {{ generated_at }}{% endif %}</div>
 
-  <section class="summary" aria-label="Test summary">
-    <div class="metric"><strong>{{ summary.total }}</strong><span>Total tests</span></div>
-    <div class="metric"><strong class="pass">{{ summary.passed }}</strong><span>Passed</span></div>
-    <div class="metric"><strong class="fail">{{ summary.failed + summary.errors }}</strong><span>Failed / errors</span></div>
-    <div class="metric"><strong>{{ coverage_percent }}</strong><span>Line coverage</span></div>
-    <div class="metric"><strong>{{ summary.flaky }}</strong><span>Flaky tests</span></div>
-  </section>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-title">
+      <h1>
+        Software Test Report & Verification Analysis
+        <span class="tag">AI Verification Suite</span>
+      </h1>
+      <div class="meta">
+        Session <span class="session-badge">{{ session_id }}</span>
+        {% if generated_at %} · Generated {{ generated_at }}{% endif %}
+      </div>
+    </div>
+    <div>
+      <span class="badge {% if summary.failed + summary.errors == 0 and summary.total > 0 %}badge-pass{% else %}badge-fail{% endif %}" style="font-size: 13px; padding: 6px 14px;">
+        {% if summary.failed + summary.errors == 0 and summary.total > 0 %}
+          ✓ ALL TESTS PASSED
+        {% elif summary.total == 0 %}
+          NO TESTS RUN
+        {% else %}
+          ✗ {{ summary.failed + summary.errors }} DEFECTS DETECTED
+        {% endif %}
+      </span>
+    </div>
+  </header>
 
-  <h2>Requirement Traceability</h2>
-  {% if requirements %}
-  <table><thead><tr><th>Requirement</th><th>Test cases</th><th>Result</th></tr></thead><tbody>
-  {% for row in traceability %}
-    <tr><td><strong>{{ row.requirement_id }}</strong><br>{{ row.description }}</td>
-      <td>{% if row.tests %}{% for test in row.tests %}<div>{{ test.test_id }}</div>{% endfor %}{% else %}<span class="muted">No generated test linked</span>{% endif %}</td>
-      <td>{% if not row.tests %}<span class="muted">Not tested</span>{% elif row.failed %}<span class="fail">Fail</span>{% elif row.flaky %}<span class="flaky">Flaky</span>{% else %}<span class="pass">Pass</span>{% endif %}</td></tr>
-  {% endfor %}
-  </tbody></table>
-  {% else %}<p class="muted">No analyzed requirements are available.</p>{% endif %}
+  <!-- Executive KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Tests Generated & Run</div>
+      <div class="kpi-value">{{ summary.total }}</div>
+      <div class="kpi-sub">Total test cases in suite</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Passed Tests</div>
+      <div class="kpi-value val-pass">{{ summary.passed }}</div>
+      <div class="kpi-sub">{{ summary.pass_rate }}% success rate</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Failed / Errors</div>
+      <div class="kpi-value {% if summary.failed + summary.errors > 0 %}val-fail{% else %}val-pass{% endif %}">
+        {{ summary.failed + summary.errors }}
+      </div>
+      <div class="kpi-sub">Requires code remediation</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Skipped Tests</div>
+      <div class="kpi-value {% if summary.skipped > 0 %}val-warn{% endif %}">
+        {{ summary.skipped }}
+      </div>
+      <div class="kpi-sub">Tests bypassed</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Statement Coverage</div>
+      <div class="kpi-value {% if coverage_percent and coverage_percent >= 80 %}val-pass{% else %}val-warn{% endif %}">
+        {{ coverage_percent if coverage_percent is not none else "N/A" }}{% if coverage_percent is not none %}%{% endif %}
+      </div>
+      <div class="kpi-sub">Executed Python lines</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Requirements Verified</div>
+      <div class="kpi-value val-pass">
+        {{ requirement_coverage.tested_count if requirement_coverage else requirements|length }}/{{ requirement_coverage.requirement_count if requirement_coverage else requirements|length }}
+      </div>
+      <div class="kpi-sub">
+        {% if requirement_coverage and requirement_coverage.coverage_percent is not none %}
+          {{ requirement_coverage.coverage_percent }}% requirements mapped
+        {% else %}
+          100% requirements mapped
+        {% endif %}
+      </div>
+    </div>
+  </div>
 
-  <h2>Function Coverage</h2>
-  {% if function_coverage %}
-  <table><thead><tr><th>Function</th><th>Line coverage</th><th>Branches</th><th>Coverage status</th></tr></thead><tbody>
-  {% for function in function_coverage %}
-    <tr><td>{{ function.function }}</td><td>{{ function.line_coverage_percent if function.line_coverage_percent is not none else "N/A" }}{% if function.line_coverage_percent is not none %}%{% endif %}</td><td>{{ function.covered_branch_count }}/{{ function.branch_count }}</td><td>{% if function.zero_coverage_branches %}<span class="fail">{{ function.zero_coverage_branches }} uncovered</span>{% else %}<span class="pass">Covered</span>{% endif %}</td></tr>
-  {% endfor %}
-  </tbody></table>
-  {% elif coverage_note %}<p class="muted">{{ coverage_note }}</p>{% else %}<p class="muted">No function coverage is available.</p>{% endif %}
-  {% for warning in coverage_warnings %}<div class="warning">{{ warning }}</div>{% endfor %}
+  <!-- SECTION 1: REQUIREMENTS TRACEABILITY MATRIX (RTM) -->
+  <div class="section-card">
+    <div class="section-header">
+      <h2>1. Requirements Traceability Matrix (RTM)</h2>
+      <span class="meta">{{ traceability|length }} Requirements analyzed</span>
+    </div>
+    <div class="section-desc">
+      <strong>Traceability Linkage:</strong> Every extracted specification from the flowchart/document is correlated with its target implementation function, source lines, concrete test cases, and verification result.
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 120px;">Req ID</th>
+            <th>Requirement Condition & Specification</th>
+            <th style="width: 170px;">Target Implementation</th>
+            <th>Linked Test Cases & Input Values</th>
+            <th style="width: 100px;">Outcome</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if traceability %}
+            {% for row in traceability %}
+            <tr>
+              <td>
+                <span class="session-badge" style="font-weight: 700; color: #0284c7;">{{ row.requirement_id }}</span>
+              </td>
+              <td>
+                <div style="font-weight: 600; color: #1e293b;">{{ row.condition or row.description }}</div>
+                {% if row.expected_result and row.expected_result != row.condition %}
+                <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+                  Expected: <code>{{ row.expected_result }}</code>
+                </div>
+                {% endif %}
+              </td>
+              <td>
+                <div style="font-weight: 600; font-family: ui-monospace, monospace; color: #334155;">
+                  {{ row.target_function }}()
+                </div>
+                <div style="font-size: 11.5px; color: #64748b;">
+                  Source Lines: {{ row.target_lines }}
+                </div>
+              </td>
+              <td>
+                {% if row.tests %}
+                  {% for t in row.tests %}
+                    <div style="margin-bottom: 8px; padding: 6px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <div>
+                          <span class="badge {% if t.category == 'White-Box' %}badge-wb{% elif t.category == 'Black-Box' %}badge-bb{% elif t.category == 'Gray-Box' %}badge-gray{% elif t.category == 'Integration' %}badge-integ{% else %}badge-neg{% endif %}">
+                            {{ t.category }}
+                          </span>
+                          <strong style="font-size: 12px; margin-left: 4px; color: #1e293b;">{{ t.clean_name }}</strong>
+                          <span style="font-size: 11px; color: #64748b; font-family: ui-monospace, monospace; margin-left: 4px;">({{ t.test_id }})</span>
+                        </div>
+                        <span class="badge {% if t.status == 'passed' %}badge-pass{% elif t.status in ['failed', 'error'] %}badge-fail{% else %}badge-gray{% endif %}" style="font-size: 11px;">
+                          {{ t.status|upper }}
+                        </span>
+                      </div>
+                      {% if t.input_values %}
+                      <div class="inputs-box" style="margin-top: 4px;">
+                        {% for k, v in t.input_values.items() %}
+                          <span class="param-key">{{ k }}=</span><span class="param-val">{{ v }}</span>{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                      </div>
+                      {% endif %}
+                      <div style="font-size: 11.5px; margin-top: 4px; color: #475569;">
+                        <strong>Expected:</strong> {{ t.expected_desc }}
+                      </div>
+                      <div style="font-size: 11.5px; margin-top: 2px; color: {% if t.status == 'passed' %}#16a34a{% else %}#dc2626{% endif %};">
+                        <strong>Result Came:</strong> {{ t.actual_desc }}
+                      </div>
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <span class="badge badge-gray">No tests linked</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.status == "passed" %}
+                  <span class="badge badge-pass">✓ PASSED</span>
+                {% elif row.status == "failed" %}
+                  <span class="badge badge-fail">✗ FAILED</span>
+                {% else %}
+                  <span class="badge badge-gray">UNTESTED</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                No requirements analyzed yet. Run requirements extraction in Live Lab.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-  <h2>Failed tests — why they failed</h2>
+  <!-- SECTION 2: COMPLETE TEST SUITE CATALOG (EVERY SINGLE GENERATED TEST) -->
+  <div class="section-card">
+    <div class="section-header">
+      <h2>2. Complete Generated Test Suite Catalog</h2>
+      <span class="meta">{{ all_tests|length }} Test Cases Executed</span>
+    </div>
+    <div class="section-desc">
+      <strong>Test Case Inventory:</strong> Complete audit of every test case generated across White-Box (branch & statement coverage), Black-Box (equivalence & boundary analysis), and Integration suites.
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 100px;">Req ID</th>
+            <th style="width: 150px;">Test Case</th>
+            <th style="width: 130px;">Function</th>
+            <th>Concrete Inputs Tested</th>
+            <th>Expected Result</th>
+            <th>Result Came (Actual)</th>
+            <th style="width: 85px;">Status</th>
+            <th style="width: 65px;">Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if all_tests %}
+            {% for test in all_tests %}
+            <tr>
+              <td>
+                {% if test.requirement_id %}
+                  <span class="session-badge" style="font-weight: 700; color: #0284c7; font-size: 11.5px;">{{ test.requirement_id }}</span>
+                {% else %}
+                  <span class="badge badge-gray" style="font-size: 10px;">GENERAL</span>
+                {% endif %}
+                <div style="margin-top: 4px;">
+                  <span class="badge {% if test.category == 'White-Box' %}badge-wb{% elif test.category == 'Black-Box' %}badge-bb{% elif test.category == 'Gray-Box' %}badge-gray{% elif test.category == 'Integration' %}badge-integ{% elif test.category == 'Negative' %}badge-neg{% else %}badge-gray{% endif %}" style="font-size: 10px;">
+                    {{ test.category }}
+                  </span>
+                </div>
+              </td>
+              <td>
+                <div style="font-weight: 700; font-size: 12.5px; color: #1e293b;">
+                  {{ test.clean_name or test.test_id }}
+                </div>
+                <div style="font-size: 11px; color: #64748b; font-family: ui-monospace, monospace; margin-top: 2px;">
+                  {{ test.test_id }}
+                </div>
+                {% if test.description and test.description != test.test_id and test.description != test.clean_name %}
+                <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;">
+                  {{ test.description }}
+                </div>
+                {% endif %}
+              </td>
+              <td>
+                {% if test.function_name %}
+                  <code style="font-size: 12px; font-weight: 600;">{{ test.function_name }}()</code>
+                {% else %}
+                  <span style="color: #94a3b8; font-size: 12px;">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if test.input_values %}
+                  <div class="inputs-box">
+                    {% for k, v in test.input_values.items() %}
+                      <span class="param-key">{{ k }}=</span><span class="param-val">{{ v }}</span>{% if not loop.last %}<br>{% endif %}
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <span style="color: #94a3b8; font-size: 12px;">Default inputs</span>
+                {% endif %}
+              </td>
+              <td>
+                <div style="font-size: 12px; color: #1e293b; font-weight: 600;">
+                  {{ test.expected_desc }}
+                </div>
+              </td>
+              <td>
+                {% if test.status == "passed" %}
+                  <div style="font-size: 12px; color: #16a34a; font-weight: 600;">
+                    ✓ {{ test.actual_desc }}
+                  </div>
+                {% elif test.status in ["failed", "error"] %}
+                  <div style="font-size: 12px; color: #dc2626; font-weight: 600;">
+                    ✗ {{ test.actual_desc }}
+                  </div>
+                {% else %}
+                  <div style="font-size: 12px; color: #64748b;">
+                    {{ test.actual_desc }}
+                  </div>
+                {% endif %}
+              </td>
+              <td>
+                {% if test.status == "passed" %}
+                  <span class="badge badge-pass">✓ PASS</span>
+                {% elif test.status in ["failed", "error"] %}
+                  <span class="badge badge-fail">✗ FAIL</span>
+                {% elif test.status == "skipped" %}
+                  <span class="badge badge-gray">SKIPPED</span>
+                {% else %}
+                  <span class="badge badge-warn">{{ test.status|upper }}</span>
+                {% endif %}
+              </td>
+              <td style="font-size: 11px; color: #64748b; font-family: ui-monospace, monospace;">
+                {{ "%.3fs"|format(test.duration) if test.duration else "—" }}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                No test cases available.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SECTION 3: DEFECT DIAGNOSTICS & REMEDIATION (IF FAILURES OCCUR) -->
   {% if defects %}
-  <table><thead><tr><th>Test</th><th>Requirement</th><th>Failure detail</th><th>How to fix the code</th></tr></thead><tbody>
-  {% for test in defects %}
-    <tr>
-      <td>
-        <strong>{{ test.test_id }}</strong>
-        {% if test.function_name %}<br><span class="muted">fn: {{ test.function_name }}</span>{% endif %}
-      </td>
-      <td>{{ test.requirement_id or "Unlinked" }}{% if test.requirement_condition %}<br><span class="muted">{{ test.requirement_condition }}</span>{% endif %}</td>
-      <td>
-        <span class="fail">{{ test.why_failed or test.status }}</span>
-
-        {% if test.input_values %}
-        <div class="detail-block detail-inputs">
-          <strong>Input values</strong>
-          <table class="input-table">
+  <div class="section-card" style="border-color: #fecaca;">
+    <div class="section-header" style="background: #fef2f2;">
+      <h2 style="color: #b91c1c;">3. Defect Analysis & Root-Cause Remediation</h2>
+      <span class="badge badge-fail">{{ defects|length }} Failing Tests</span>
+    </div>
+    <div class="section-desc" style="background: #fff5f5; border-color: #fee2e2; color: #991b1b;">
+      The following tests detected discrepancies between the source code implementation and the specified requirements. Review the failing inputs and suggested code fixes below.
+    </div>
+    {% for test in defects %}
+    <div class="defect-card">
+      <div class="defect-card-header">
+        <div>
+          <strong style="color: #991b1b; font-size: 13px; font-family: ui-monospace, monospace;">{{ test.test_id }}</strong>
+          <span style="margin-left: 8px; font-size: 12px; color: #7f1d1d;">Linked: {{ test.requirement_id or "General" }}</span>
+        </div>
+        <span class="badge badge-fail">{{ test.status|upper }}</span>
+      </div>
+      <div class="defect-card-body">
+        <div class="diag-box">
+          <div class="diag-box-title">Input Values Triggering Discrepancy</div>
+          {% if test.input_values %}
+          <div class="inputs-box" style="margin-top: 0;">
             {% for k, v in test.input_values.items() %}
-            <tr><td>{{ k }}</td><td><code>{{ v }}</code></td></tr>
+              <span class="param-key">{{ k }}:</span> <span class="param-val">{{ v }}</span><br>
             {% endfor %}
-          </table>
+          </div>
+          {% else %}
+          <div style="color: #64748b;">Inputs captured in test body</div>
+          {% endif %}
+
+          {% if test.exception_type %}
+          <div style="margin-top: 10px;">
+            <div class="diag-box-title" style="color: #dc2626;">Exception Encountered</div>
+            <code>{{ test.exception_type }}: {{ test.exception_value }}</code>
+          </div>
+          {% endif %}
+
+          {% if test.failing_line %}
+          <div style="margin-top: 10px;">
+            <div class="diag-box-title">Failing Line in Test</div>
+            <code>{{ test.failing_line }}</code>
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
 
-        {% if test.exception_type %}
-        <div class="detail-block detail-exception">
-          <strong>Exception raised</strong>
-          <code class="exc">{{ test.exception_type }}: {{ test.exception_value }}</code>
+        <div>
+          <div class="fix-box">
+            <div style="font-weight: 700; margin-bottom: 4px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">
+              Recommended Source Code Fix
+            </div>
+            <div>
+              {{ test.how_to_fix or "Update the corresponding branch or return expression in source.py to satisfy this requirement condition." }}
+            </div>
+          </div>
+          {% if test.error_message %}
+          <details style="margin-top: 10px;">
+            <summary style="font-size: 11.5px; color: #64748b; cursor: pointer;">View raw traceback</summary>
+            <pre style="background: #f1f5f9; padding: 8px; border-radius: 4px; max-height: 140px; overflow: auto; margin-top: 4px;">{{ test.error_message }}</pre>
+          </details>
+          {% endif %}
         </div>
-        {% endif %}
-
-        {% if test.failing_line %}
-        <div class="detail-block detail-line">
-          <strong>Failing call</strong>
-          <code class="line">{{ test.failing_line }}</code>
-        </div>
-        {% endif %}
-
-        {% if test.error_message %}
-        <details style="margin-top:8px">
-          <summary style="cursor:pointer;font-size:11px;color:#586574">Full traceback</summary>
-          <pre>{{ test.error_message }}</pre>
-        </details>
-        {% endif %}
-      </td>
-      <td>{{ test.how_to_fix or "Update source.py so this input matches the requirement, then re-run." }}</td>
-    </tr>
-  {% endfor %}
-  </tbody></table>
-  {% else %}<p class="pass">No failing tests reported.</p>{% endif %}
-
-  <h2>Passed tests — input values verified</h2>
-  {% if passed_tests %}
-  <table><thead><tr><th>Test</th><th>Requirement</th><th>Verified input values</th></tr></thead><tbody>
-  {% for test in passed_tests %}
-    <tr>
-      <td>
-        <strong>{{ test.test_id }}</strong>
-        {% if test.function_name %}<br><span class="muted">fn: {{ test.function_name }}</span>{% endif %}
-      </td>
-      <td>{{ test.requirement_id or "Unlinked" }}{% if test.requirement_condition %}<br><span class="muted">{{ test.requirement_condition }}</span>{% endif %}</td>
-      <td>
-        <span class="pass">Passed</span>
-        {% if test.input_values %}
-        <div class="detail-block detail-inputs">
-          <strong>Input values</strong>
-          <table class="input-table">
-            {% for k, v in test.input_values.items() %}
-            <tr><td>{{ k }}</td><td><code>{{ v }}</code></td></tr>
-            {% endfor %}
-          </table>
-        </div>
-        {% endif %}
-        {% if test.expected_output %}
-        <div style="margin-top:4px; font-size:11px; color:#586574;">
-          Expected result: <code>{{ test.expected_output }}</code>
-        </div>
-        {% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody></table>
-  {% else %}<p class="muted">No passed tests reported.</p>{% endif %}
-
-  <h2>Requirement file coverage</h2>
-  {% if requirement_coverage and requirement_coverage.requirements %}
-  <p class="meta">{{ requirement_coverage.tested_count }}/{{ requirement_coverage.requirement_count }} requirements have executed tests
-    {% if requirement_coverage.coverage_percent is not none %}({{ requirement_coverage.coverage_percent }}%){% endif %}</p>
-  <table><thead><tr><th>Requirement</th><th>Status</th><th>Linked tests</th></tr></thead><tbody>
-  {% for row in requirement_coverage.requirements %}
-    <tr>
-      <td><strong>{{ row.requirement_id }}</strong><br>{{ row.condition }}</td>
-      <td>{% if row.status == "passed" %}<span class="pass">Covered / pass</span>{% elif row.status == "failed" %}<span class="fail">Covered / fail</span>{% else %}<span class="muted">Not covered</span>{% endif %}</td>
-      <td>{{ row.test_count }}</td>
-    </tr>
-  {% endfor %}
-  </tbody></table>
-  {% else %}<p class="muted">No requirement coverage is available.</p>{% endif %}
-
-  <h2>Uncovered source lines</h2>
-  {% if missing_lines %}
-  <p class="warning">These executable lines in source.py were not hit: {{ missing_lines|join(", ") }}</p>
-  {% if source_lines %}
-  <pre>{% for line in source_lines %}{% if line.status == "missed" %}{{ line.lineno }} ✗ {{ line.text }}
-{% endif %}{% endfor %}</pre>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
   {% endif %}
-  {% else %}<p class="pass">All measured source lines were executed.</p>{% endif %}
+
+  <!-- SECTION 4: FUNCTION & BRANCH COVERAGE -->
+  <div class="section-card">
+    <div class="section-header">
+      <h2>{% if defects %}4.{% else %}3.{% endif %} Function & Branch Coverage</h2>
+      <span class="meta">{{ function_coverage|length }} Functions Analyzed</span>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Function Name</th>
+            <th style="width: 140px;">Line Coverage</th>
+            <th style="width: 140px;">Branch Coverage</th>
+            <th style="width: 120px;">Complexity</th>
+            <th style="width: 140px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if function_coverage %}
+            {% for fn in function_coverage %}
+            <tr>
+              <td>
+                <div style="font-family: ui-monospace, monospace; font-weight: 600; color: #1e293b;">
+                  {{ fn.function }}()
+                </div>
+                <div style="font-size: 11px; color: #64748b;">
+                  Source Lines: L{{ fn.lineno }}–L{{ fn.end_lineno }}
+                </div>
+              </td>
+              <td>
+                <strong style="color: {% if fn.line_coverage_percent and fn.line_coverage_percent >= 80 %}#16a34a{% else %}#d97706{% endif %};">
+                  {{ fn.line_coverage_percent if fn.line_coverage_percent is not none else "N/A" }}{% if fn.line_coverage_percent is not none %}%{% endif %}
+                </strong>
+              </td>
+              <td>
+                {{ fn.covered_branch_count }}/{{ fn.branch_count }} branches
+              </td>
+              <td>
+                <span class="badge badge-gray">CC: {{ fn.cyclomatic_complexity }}</span>
+              </td>
+              <td>
+                {% if fn.zero_coverage_branches == 0 %}
+                  <span class="badge badge-pass">✓ 100% COVERED</span>
+                {% else %}
+                  <span class="badge badge-warn">{{ fn.zero_coverage_branches }} Uncovered</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                No function coverage details available.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+    {% if coverage_warnings %}
+    <div style="padding: 12px 20px; background: var(--warning-bg); border-top: 1px solid #fef08a;">
+      {% for w in coverage_warnings %}
+      <div style="font-size: 12px; color: #92400e; margin-bottom: 2px;">⚠️ {{ w }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- SECTION 5: SOURCE CODE COVERAGE VIEWER -->
+  {% if source_lines %}
+  <div class="section-card">
+    <div class="section-header">
+      <h2>{% if defects %}5.{% else %}4.{% endif %} Source Code Coverage Audit</h2>
+      <span class="meta">
+        {% if missing_lines %}
+          <span style="color: #dc2626; font-weight: 600;">{{ missing_lines|length }} Unexecuted Lines: {{ missing_lines|join(', ') }}</span>
+        {% else %}
+          <span style="color: #16a34a; font-weight: 600;">✓ 100% Statement Coverage Achieved</span>
+        {% endif %}
+      </span>
+    </div>
+    <div class="source-viewer">
+      {% for line in source_lines %}
+      <div class="source-line {% if line.status == 'missed' %}line-missed{% elif line.status == 'covered' %}line-covered{% endif %}">
+        <span class="line-no">{{ line.lineno }}</span>
+        <span class="line-symbol">{% if line.status == 'missed' %}✗{% elif line.status == 'covered' %}✓{% else %} {% endif %}</span>
+        <span class="line-content">{{ line.text }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Footer -->
+  <footer style="text-align: center; font-size: 12px; color: #94a3b8; margin-top: 32px; padding-bottom: 20px;">
+    AI-Assisted Intelligent Software Testing Platform · Automated QA Verification & Traceability Report
+  </footer>
+
 </main>
 </body>
 </html>

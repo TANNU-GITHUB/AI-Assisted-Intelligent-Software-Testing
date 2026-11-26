@@ -9,6 +9,7 @@ test.describe('Live Lab with Jev semantic checks', () => {
   test('Jev can verify the Live Lab workspace', async ({ page }) => {
     const jev = await createOptionalJev(page);
     test.skip(!jev, 'Install playwright-jev (see frontend/.env.example) to run semantic UI tests.');
+    if (!jev) return;
 
     await page.goto('/live-lab');
     await jev.verify('the page title mentions AI Testing Lab');
@@ -21,6 +22,7 @@ test.describe('Live Lab with Jev semantic checks', () => {
 
     const jev = await createOptionalJev(page);
     test.skip(!jev, 'Install playwright-jev to run semantic UI tests.');
+    if (!jev) return;
 
     await page.goto('/live-lab');
     await jev.click('Run Analysis');

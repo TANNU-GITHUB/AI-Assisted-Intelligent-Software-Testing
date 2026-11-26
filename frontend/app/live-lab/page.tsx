@@ -310,7 +310,7 @@ export default function LiveLabPage() {
   const functions: FunctionAnalysis[] = session?.code_analysis?.functions || [];
   const structuredReqs: StructuredRequirement[] =
     session?.requirement_analysis?.requirements || [];
-  const whiteBoxTests = session?.white_box_tests?.test_cases?.length || 0;
+  const whiteBoxTests = session?.white_box_tests?.test_count || 0;
   const blackBoxTests = session?.black_box_tests?.test_count || 0;
   const grayBoxTests = session?.gray_box_tests?.test_count || 0;
   const failedTests = (session?.test_execution?.tests || []).filter(

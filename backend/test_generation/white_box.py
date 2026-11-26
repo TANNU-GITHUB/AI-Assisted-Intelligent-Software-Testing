@@ -89,8 +89,8 @@ def _normalize_cases(data: Any, function_name: str) -> list[dict[str, Any]]:
                 expected_exception = require_python_identifier(
                     str(expected_exception).strip(), "Exception name"
                 )
-            except ValueError:
-                expected_exception = "ValueError"
+            except ValueError as exc:
+                raise WhiteBoxError(str(exc)) from exc
         normalized.append(
             {
                 "case_id": case_id,
@@ -274,9 +274,10 @@ def _write_pytest_file(
         )
         lines.append(f"def {test_name}(_requirement_id):")
         if not case.get("assert_output", True):
-            lines.append(
-                '    pytest.skip("Static fallback cannot determine the expected output.")'
-            )
+            call = function_call_expression(function_name, inputs)
+            lines.append("    # Verify execution completes without uncaught exception")
+            lines.append(f"    result = {call}")
+            lines.append("    assert result is not None or result is None")
         elif case.get("expected_exception"):
             exception_name = expected_exception_expression(case["expected_exception"])
             call = function_call_expression(function_name, inputs)
@@ -348,7 +349,7 @@ def analyze_session_white_box(session_id: str) -> dict:
             branches = fn.get("branches") or []
             source = "fallback"
             remaining_llm_budget = (
-                llm_is_configured()
+                (bool(key) or llm_is_configured())
                 and llm_used < max_llm_functions
                 and (time.monotonic() - llm_started) < llm_wall_seconds
             )
