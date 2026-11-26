@@ -48,3 +48,32 @@ def test_gray_box_requires_code_and_requirement_analysis(tmp_path, monkeypatch):
         assert "requirement analysis" in str(exc) or "code analysis" in str(exc)
     else:
         raise AssertionError("gray-box generation should require prior analysis")
+
+
+def test_gray_box_semantically_links_requirements_and_trims_llm_context():
+    from test_generation.gray_box import _fallback_cases, _generate_cases_with_llm
+
+    reqs = [
+        {"requirement_id": "REQ-01", "condition": "calc_fee must raise ValueError when amount < 0.", "expected_result": "Raises ValueError"},
+        {"requirement_id": "REQ-02", "condition": "calc_fee returns 10.0 when amount >= 100.", "expected_result": "Returns 10.0"},
+    ]
+    api = [{"name": "calc_fee", "return_type": "float", "params": [{"name": "amount", "annotation": "float"}]}]
+    fns = [{"name": "calc_fee", "qualified_name": "calc_fee", "params": api[0]["params"], "branches": [{"type": "if", "lineno": 2, "condition": "amount < 0", "has_else": False}]}]
+    src = "def calc_fee(amount: float) -> float:\n    if amount < 0:\n        raise ValueError('neg')\n    return 10.0 if amount >= 100 else 0.0\n"
+
+    cases = _fallback_cases(reqs, api, fns, src)
+    valid_non_error = [c for c in cases if c["expected_exception"] is None]
+    assert valid_non_error
+    assert all(c["requirement_id"] == "REQ-02" for c in valid_non_error)
+
+    captured_prompts = []
+    _generate_cases_with_llm(
+        structured_requirements=reqs,
+        public_api=api,
+        functions=fns,
+        source_code="x = 1\n" * 5000,
+        api_key="k",
+        model_name="m",
+        llm_call=lambda prompt, *_args: captured_prompts.append(prompt) or '[{"case_id":"g1","description":"No error on valid input","requirement_id":"BAD","function_name":"calc_fee","input":{"amount":120.0}}]',
+    )
+    assert len(captured_prompts[0]) < 12000

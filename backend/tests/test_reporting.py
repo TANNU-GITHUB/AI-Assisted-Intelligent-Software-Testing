@@ -224,3 +224,39 @@ def test_source_update_runs_existing_regression_tests(tmp_path, monkeypatch):
     assert (session_folder / "regression" / "source_snapshot.py").read_text(
         encoding="utf-8"
     ).endswith("return 2\n")
+
+
+def test_function_coverage_excludes_non_executable_lines_and_formats_expected_cleanly():
+    from reporting.analyzer import _format_expected
+
+    code_analysis = {
+        "functions": [
+            {
+                "name": "evaluate",
+                "qualified_name": "evaluate",
+                "lineno": 1,
+                "end_lineno": 9,
+                "branch_count": 1,
+                "branches": [{"type": "if", "lineno": 2, "condition": "x > 0", "has_else": True}],
+            }
+        ]
+    }
+    # Lines 1 (def), 4 (blank), 6 (else:), 8-9 (dict closing) are non-executable; 2,3,5,7 ran
+    cov = execution_analyzer._function_coverage(
+        code_analysis,
+        executed_lines={2, 3, 5, 7},
+        missing_branch_lines=set(),
+        missing_lines=set(),
+    )
+    assert cov[0]["line_coverage_percent"] == 100.0
+
+    # White-Box valid test should not show an unrelated requirement's ValueError text
+    wb_expected = _format_expected(
+        {"status": "passed", "requirement_expected": "Negative family income must raise ValueError"},
+        {"assert_output": False},
+        category="White-Box",
+    )
+    assert wb_expected == "Valid execution (no uncaught error)"
+
+    bool_expected = _format_expected({"status": "passed"}, {"expected_output": False}, category="Black-Box")
+    assert bool_expected == "Return False"

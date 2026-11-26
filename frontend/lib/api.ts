@@ -163,13 +163,33 @@ async function readError(res: Response): Promise<string> {
   return res.statusText || 'Request failed';
 }
 
+const REQUEST_TIMEOUT_MS = 90_000;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   const auth = authHeaders();
   Object.entries(auth).forEach(([key, value]) => {
     if (!headers.has(key)) headers.set(key, value);
   });
-  const res = await fetch(apiUrl(path), { ...init, headers });
+  const controller = new AbortController();
+  const externalSignal = init?.signal;
+  if (externalSignal?.aborted) {
+    controller.abort();
+  } else if (externalSignal) {
+    externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), { ...init, headers, signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted && !externalSignal?.aborted) {
+      throw new Error('Request timed out after 90s waiting for the backend stage.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
   handleUnauthorizedResponse(res, headers.has('Authorization'));
   if (!res.ok) {
     throw new Error(await readError(res));

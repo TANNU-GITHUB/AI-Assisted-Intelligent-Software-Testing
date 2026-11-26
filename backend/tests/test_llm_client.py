@@ -303,3 +303,34 @@ def test_generate_text_falls_back_to_ollama_on_nvidia_timeout(monkeypatch):
     assert provider.startswith("ollama:")
     assert is_nvidia_exhausted() is True
     clear_nvidia_exhausted()
+
+
+def test_generate_text_does_not_retry_ollama_on_timeout(monkeypatch):
+    from llm_client import LLMError, clear_nvidia_exhausted, mark_nvidia_exhausted
+
+    mark_nvidia_exhausted(60.0)
+    ollama_urls: list[str] = []
+
+    def handler(method, url, headers, body):
+        del method, headers, body
+        ollama_urls.append(url)
+        request = httpx.Request("POST", url)
+        raise httpx.ReadTimeout("slow local model", request=request)
+
+    monkeypatch.setattr("llm_client.NVIDIA_API_KEY", "")
+    monkeypatch.setattr("llm_client.httpx.Client", _fake_client(handler))
+    monkeypatch.setattr("llm_client._is_ollama_online", lambda timeout=1.5: True)
+    monkeypatch.setattr("llm_client._resolve_available_ollama_model", lambda preferred="llama3.2": "llama3.2")
+
+    try:
+        try:
+            generate_text("Long gray-box prompt.")
+            raise AssertionError("Expected LLMError on Ollama timeout")
+        except LLMError:
+            pass
+    finally:
+        clear_nvidia_exhausted()
+
+    # Should fail after a single /api/chat attempt rather than waiting on /v1/chat/completions or retrying limits.
+    assert len(ollama_urls) == 1
+    assert ollama_urls[0].endswith("/api/chat")

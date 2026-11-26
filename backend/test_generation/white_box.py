@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import ast
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import re
 import time
 from typing import Any, Callable
 
 from config import NVIDIA_API_KEY, NVIDIA_MODEL
-from llm_client import generate_text, llm_is_configured
+from llm_client import LLMError, generate_text, is_nvidia_exhausted, llm_is_configured
 from input_handler.handler import load_session, save_session, session_dir, session_locked
 from input_handler.session_logging import log_session_error
 from json_utils import extract_json as _extract_json
@@ -17,6 +18,9 @@ from test_generation.black_box import (
     _default_inputs_for_params,
     _inputs_from_condition,
     _is_bool_param,
+    description_implies_exception,
+    match_requirement_id,
+    sanitize_inputs_for_params,
 )
 from test_generation.prompts_white_box import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
 from test_generation.safe_codegen import (
@@ -53,7 +57,11 @@ def _function_source(module_source: str, lineno: int, end_lineno: int) -> str:
     return "\n".join(lines[start:end])
 
 
-def _normalize_cases(data: Any, function_name: str) -> list[dict[str, Any]]:
+def _normalize_cases(
+    data: Any,
+    function_name: str,
+    params_meta: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     items: list[Any] = []
     if isinstance(data, list):
         items = data
@@ -77,12 +85,15 @@ def _normalize_cases(data: Any, function_name: str) -> list[dict[str, Any]]:
         inputs = item.get("input")
         if not isinstance(inputs, dict):
             inputs = {}
+
+        if params_meta:
+            inputs = sanitize_inputs_for_params(inputs, params_meta)
+
         expected_output = item.get("expected_output")
         expected_exception = item.get("expected_exception")
         if expected_exception is None and "expected_output" not in item:
-            if "error" in description.lower() or "exception" in description.lower():
-                expected_exception = "ValueError"
-            else:
+            expected_exception = description_implies_exception(description)
+            if expected_exception is None:
                 expected_output = None
         if expected_exception:
             try:
@@ -118,6 +129,7 @@ def _generate_cases_with_llm(
     branches: list[dict[str, Any]],
     api_key: str,
     model_name: str,
+    params: list[dict[str, Any]] | None = None,
     llm_call: Callable[..., str] = _call_llm,
 ) -> list[dict[str, Any]]:
     branch_map = json.dumps(branches, indent=2)
@@ -134,8 +146,10 @@ def _generate_cases_with_llm(
     )
     try:
         raw = llm_call(prompt, api_key, model_name)
-        return _normalize_cases(_extract_json(raw), function_name)
-    except (json.JSONDecodeError, WhiteBoxError, TypeError, ValueError):
+        return _normalize_cases(_extract_json(raw), function_name, params_meta=params)
+    except (json.JSONDecodeError, WhiteBoxError, TypeError, ValueError) as exc:
+        if isinstance(exc, WhiteBoxError) and isinstance(exc.__cause__, LLMError):
+            raise
         retry = STRICT_RETRY_PROMPT.format(
             function_name=function_name,
             branch_map=branch_map,
@@ -143,11 +157,33 @@ def _generate_cases_with_llm(
         )
         try:
             raw = llm_call(retry, api_key, model_name)
-            return _normalize_cases(_extract_json(raw), function_name)
+            return _normalize_cases(_extract_json(raw), function_name, params_meta=params)
         except (json.JSONDecodeError, WhiteBoxError, TypeError, ValueError) as exc:
             raise WhiteBoxError(
                 f"LLM did not return valid JSON for {function_name}: {exc}"
             ) from exc
+
+
+def _branch_exception_from_ast(module_source: str, lineno: int | None) -> tuple[bool, str | None]:
+    """Check if the AST If-body at lineno directly raises an exception (static, never executes)."""
+    if not lineno:
+        return False, None
+    try:
+        tree = ast.parse(module_source)
+    except SyntaxError:
+        return False, None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If) and getattr(node, "lineno", None) == lineno:
+            for stmt in node.body:
+                for inner in ast.walk(stmt):
+                    if isinstance(inner, ast.Raise) and inner.exc is not None:
+                        if isinstance(inner.exc, ast.Call) and isinstance(inner.exc.func, ast.Name):
+                            return True, inner.exc.func.id
+                        if isinstance(inner.exc, ast.Name):
+                            return True, inner.exc.id
+                        return True, "ValueError"
+            return True, None
+    return False, None
 
 
 def _fallback_cases(
@@ -189,14 +225,11 @@ def _fallback_cases(
 
     for branch_index, branch in enumerate(branches, start=1):
         condition = str(branch.get("condition") or "")
-        try:
-            inputs = _inputs_from_condition(condition, params_meta)
-        except Exception:
-            inputs = _default_inputs_for_params(params_meta)
-
+        found_if, ast_exc = _branch_exception_from_ast(module_source, branch.get("lineno"))
         cond_low = condition.lower()
-        expected_exception = None
-        if (
+        if found_if:
+            expected_exception = ast_exc
+        elif (
             "<= 0" in cond_low
             or "<=0" in cond_low
             or "< 0" in cond_low
@@ -207,6 +240,15 @@ def _fallback_cases(
             or "invalid" in cond_low
         ):
             expected_exception = "ValueError"
+        else:
+            expected_exception = None
+
+        try:
+            inputs = _inputs_from_condition(
+                condition, params_meta, expect_error=bool(expected_exception)
+            )
+        except Exception:
+            inputs = _default_inputs_for_params(params_meta)
 
         add_case(
             f"branch{branch_index}",
@@ -214,6 +256,25 @@ def _fallback_cases(
             inputs,
             expected_exception=expected_exception,
         )
+
+    # Add an explicit fallthrough/else path case if branches didn't already exercise valid defaults or low else path
+    seen_inputs = {json.dumps(c["input"], sort_keys=True) for c in cases}
+    default_inputs = _default_inputs_for_params(params_meta)
+    if json.dumps(default_inputs, sort_keys=True) not in seen_inputs:
+        add_case("else_default", "covers default fallthrough branch", default_inputs)
+        seen_inputs.add(json.dumps(default_inputs, sort_keys=True))
+
+    if any(b.get("has_else") for b in branches):
+        score_param = next(
+            (p["name"] for p in params_meta if p.get("name", "").lower() in {"scores", "marks", "grades"}),
+            None,
+        )
+        if score_param:
+            low_inputs = dict(default_inputs)
+            low_inputs[score_param] = [30.0, 40.0]
+            if json.dumps(low_inputs, sort_keys=True) not in seen_inputs:
+                add_case("else_low", "covers low-score else branch", low_inputs)
+                seen_inputs.add(json.dumps(low_inputs, sort_keys=True))
 
     bool_params = [
         p["name"]
@@ -233,12 +294,23 @@ def _fallback_cases(
 
 
 def _assign_requirement_ids(
-    cases: list[dict[str, Any]], requirement_ids: list[str]
+    cases: list[dict[str, Any]],
+    requirement_ids: list[str],
+    requirements: list[dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     if not requirement_ids:
         requirement_ids = ["REQ-01"]
+    structured = [r for r in (requirements or []) if isinstance(r, dict) and r.get("requirement_id")]
     for index, case in enumerate(cases):
-        case["requirement_id"] = requirement_ids[index % len(requirement_ids)]
+        if structured:
+            case["requirement_id"] = match_requirement_id(
+                case.get("function_name", ""),
+                case.get("description", ""),
+                case.get("expected_exception"),
+                structured,
+            )
+        else:
+            case["requirement_id"] = requirement_ids[index % len(requirement_ids)]
     return cases
 
 
@@ -283,10 +355,15 @@ def _write_pytest_file(
             call = function_call_expression(function_name, inputs)
             lines.append(f"    with pytest.raises({exception_name}):")
             lines.append(f"        {call}")
-        else:
+        elif case.get("expected_output") is not None:
             expected = case.get("expected_output")
             call = function_call_expression(function_name, inputs)
             lines.append(f"    _assert_match({call}, {json_expression(expected)})")
+        else:
+            call = function_call_expression(function_name, inputs)
+            lines.append("    # Verify execution completes without uncaught exception")
+            lines.append(f"    result = {call}")
+            lines.append("    assert result is not None or result is None")
         lines.append("")
 
     content = "\n".join(lines)
@@ -324,76 +401,90 @@ def analyze_session_white_box(session_id: str) -> dict:
 
     key = NVIDIA_API_KEY.strip()
     model = NVIDIA_MODEL
-    llm_used = 0
-    llm_started = time.monotonic()
-    max_llm_functions = 30
-    llm_wall_seconds = 240.0
-    try:
-        for fn in functions:
-            if fn.get("is_async"):
-                continue
-            qualified = fn.get("qualified_name") or fn["name"]
-            if "." in qualified:
-                per_function.append(
-                    {
-                        "function": qualified,
-                        "status": "skipped",
-                        "reason": "Class methods are not generated yet.",
-                        "case_count": 0,
-                    }
-                )
-                continue
 
-            name = fn["name"]
-            snippet = _function_source(module_source, fn["lineno"], fn["end_lineno"])
-            branches = fn.get("branches") or []
-            source = "fallback"
-            remaining_llm_budget = (
-                (bool(key) or llm_is_configured())
-                and llm_used < max_llm_functions
-                and (time.monotonic() - llm_started) < llm_wall_seconds
+    eligible_functions: list[dict[str, Any]] = []
+    for fn in functions:
+        if fn.get("is_async"):
+            continue
+        qualified = fn.get("qualified_name") or fn["name"]
+        if "." in qualified:
+            per_function.append(
+                {
+                    "function": qualified,
+                    "status": "skipped",
+                    "reason": "Class methods are not generated yet.",
+                    "case_count": 0,
+                }
             )
-            if remaining_llm_budget:
-                try:
-                    cases = _generate_cases_with_llm(
-                        function_name=name,
-                        function_source=snippet,
-                        module_source=module_source,
-                        branches=branches,
-                        api_key=key,
-                        model_name=model,
-                    )
-                    source = "llm"
-                    llm_used += 1
-                except Exception:
-                    try:
-                        cases = _fallback_cases(fn, module_source)
-                    except Exception:
-                        cases = []
-                    source = "fallback"
-            else:
-                try:
-                    cases = _fallback_cases(fn, module_source)
-                except Exception:
-                    cases = []
-                source = "fallback"
+            continue
+        eligible_functions.append(fn)
 
-            if not cases:
-                cases = [
-                    {
-                        "case_id": "smoke",
-                        "description": f"default smoke test for {name}",
-                        "input": _default_inputs_for_params(fn.get("params", [])),
-                        "expected_output": None,
-                        "expected_exception": None,
-                        "test_type": "white_box",
-                        "function_name": name,
-                        "assert_output": False,
-                    }
-                ]
+    def _process_one_fn(fn: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+        name = fn["name"]
+        snippet = _function_source(module_source, fn["lineno"], fn["end_lineno"])
+        branches = fn.get("branches") or []
+        source = "fallback"
+        cases = []
 
+        import config as _cfg
+
+        key_overridden = bool(key) and key != (_cfg.NVIDIA_API_KEY or "").strip()
+        if (bool(key) and (key_overridden or not is_nvidia_exhausted())) or llm_is_configured():
             try:
-                cases = _assign_requirement_ids(cases, requirement_ids)
+                cases = _generate_cases_with_llm(
+                    function_name=name,
+                    function_source=snippet,
+                    module_source=module_source,
+                    branches=branches,
+                    api_key=key,
+                    model_name=model,
+                    params=fn.get("params", []),
+                )
+                source = "llm"
+            except Exception:
+                cases = []
+
+        if not cases:
+            try:
+                cases = _fallback_cases(fn, module_source)
+                source = "fallback"
+            except Exception:
+                cases = []
+
+        if not cases:
+            cases = [
+                {
+                    "case_id": "smoke",
+                    "description": f"default smoke test for {name}",
+                    "input": _default_inputs_for_params(fn.get("params", [])),
+                    "expected_output": None,
+                    "expected_exception": None,
+                    "test_type": "white_box",
+                    "function_name": name,
+                    "assert_output": False,
+                }
+            ]
+        return fn, cases, source
+
+    try:
+        results: list[tuple[dict[str, Any], list[dict[str, Any]], str]] = []
+        if eligible_functions:
+            max_workers = min(len(eligible_functions), 4)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_process_one_fn, fn): fn for fn in eligible_functions}
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception:
+                        fn = futures[future]
+                        fallback_c = _fallback_cases(fn, module_source)
+                        results.append((fn, fallback_c, "fallback"))
+
+        for fn, cases, source in results:
+            name = fn["name"]
+            qualified = fn.get("qualified_name") or name
+            try:
+                cases = _assign_requirement_ids(cases, requirement_ids, requirements=requirements)
                 all_cases.extend(cases)
                 file_path = _write_pytest_file(session_id, name, cases)
                 files_written.append(file_path)

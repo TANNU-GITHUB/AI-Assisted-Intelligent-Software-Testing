@@ -54,9 +54,15 @@ def _find_test_case_inputs(test_id: str, payload: dict) -> dict:
         functions = wb.get("functions") or []
         for fn in functions:
             fn_name = (fn.get("function") or "").lower()
-            if fn_name and fn_name in tid:
+            if fn_name and f"test_{fn_name}.py" in tid:
                 cases = fn.get("cases") or []
                 break
+        if not cases:
+            for fn in functions:
+                fn_name = (fn.get("function") or "").lower()
+                if fn_name and fn_name in tid:
+                    cases = fn.get("cases") or []
+                    break
         if not cases:
             raw = wb.get("test_cases")
             cases = raw if isinstance(raw, list) else []
@@ -108,6 +114,10 @@ def _find_test_case_inputs(test_id: str, payload: dict) -> dict:
                     "input_values": tc.get("input") or {},
                     "expected_output": tc.get("expected_output"),
                     "expected_exception": tc.get("expected_exception"),
+                    "expected_field": tc.get("expected_field"),
+                    "expected_field_value": tc.get("expected_field_value"),
+                    "expected_delta": tc.get("expected_delta"),
+                    "assert_output": tc.get("assert_output"),
                     "requirement_id": tc.get("requirement_id"),
                     "description": tc.get("description") or tc.get("target_branch") or "",
                 }
@@ -123,6 +133,10 @@ def _find_test_case_inputs(test_id: str, payload: dict) -> dict:
                 "input_values": tc.get("input") or {},
                 "expected_output": tc.get("expected_output"),
                 "expected_exception": tc.get("expected_exception"),
+                "expected_field": tc.get("expected_field"),
+                "expected_field_value": tc.get("expected_field_value"),
+                "expected_delta": tc.get("expected_delta"),
+                "assert_output": tc.get("assert_output"),
                 "requirement_id": tc.get("requirement_id"),
                 "description": tc.get("description") or tc.get("target_branch") or "",
             }
@@ -178,17 +192,31 @@ def _clean_test_name(test_id: str) -> str:
     return raw.replace("_", " ").strip().title()
 
 
-def _format_expected(test: dict, test_inputs: dict) -> str:
+def _format_expected(test: dict, test_inputs: dict, category: str = "") -> str:
     expected_exc = test_inputs.get("expected_exception") or test.get("expected_exception")
     if expected_exc:
         return f"Raise {expected_exc}"
+    expected_field = test_inputs.get("expected_field") or test.get("expected_field")
+    if expected_field:
+        expected_delta = test_inputs.get("expected_delta")
+        if expected_delta is not None:
+            return f"Field '{expected_field}' == base + {expected_delta}"
+        field_val = test_inputs.get("expected_field_value")
+        return f"Field '{expected_field}' == {field_val!r}"
     expected_out = test_inputs.get("expected_output") if test_inputs.get("expected_output") is not None else test.get("expected_output")
     if expected_out is not None:
+        if isinstance(expected_out, bool):
+            return f"Return {expected_out}"
         if isinstance(expected_out, (dict, list)):
             return f"Return {json.dumps(expected_out)}"
         return f"Return {expected_out}"
+    if category == "White-Box" or test_inputs.get("assert_output") is False:
+        return "Valid execution (no uncaught error)"
     if test.get("requirement_expected"):
-        return str(test.get("requirement_expected"))
+        req_exp = str(test.get("requirement_expected"))
+        # Do not attach an unrelated exception sentence to a non-raising test case.
+        if not any(w in req_exp.lower() for w in ("valueerror", "exception", "raise", "error")):
+            return req_exp
     return "Valid execution (no uncaught error)"
 
 
@@ -198,6 +226,12 @@ def _format_actual(test: dict, test_inputs: dict, err_details: dict) -> str:
         expected_exc = test_inputs.get("expected_exception") or test.get("expected_exception")
         if expected_exc:
             return f"Raised {expected_exc} as expected"
+        expected_field = test_inputs.get("expected_field") or test.get("expected_field")
+        if expected_field:
+            expected_delta = test_inputs.get("expected_delta")
+            if expected_delta is not None:
+                return f"Field '{expected_field}' included +{expected_delta} as expected"
+            return f"Field '{expected_field}' matched {test_inputs.get('expected_field_value')!r}"
         expected_out = test_inputs.get("expected_output") if test_inputs.get("expected_output") is not None else test.get("expected_output")
         if expected_out is not None:
             return f"Returned {expected_out} (Matches expected)"
@@ -221,6 +255,10 @@ def _format_actual(test: dict, test_inputs: dict, err_details: dict) -> str:
         m = re.search(r"AssertionError:\s*assert\s+(.*?)\s+==\s+(.*)", err)
         if m:
             return f"Returned {m.group(1).strip()} (Expected {m.group(2).strip()})"
+        did_not_raise = re.search(r"DID NOT RAISE\s+.*?'([^']+)'|DID NOT RAISE\s+([^\n]+)", err)
+        if did_not_raise:
+            exc_name = (did_not_raise.group(1) or did_not_raise.group(2) or "Exception").strip()
+            return f"Completed normally (DID NOT RAISE {exc_name})"
         lines = [line.lstrip("E ").strip() for line in err.splitlines() if line.strip()]
         if lines:
             return lines[-1][:140]
@@ -279,7 +317,7 @@ def build_report_data(payload: dict) -> dict:
             if not fn_name and len(code_functions) == 1:
                 fn_name = code_functions[0].get("name") or ""
 
-        expected_desc = _format_expected(test, test_inputs)
+        expected_desc = _format_expected(test, test_inputs, category)
         actual_desc = _format_actual(test, test_inputs, err_details)
 
         enriched = {
@@ -346,14 +384,26 @@ def build_report_data(payload: dict) -> dict:
             }
         )
 
+    code_fn_meta = {
+        fn.get("name"): fn
+        for fn in code_functions
+        if fn.get("name")
+    }
     functions = []
     warnings = []
     for function in coverage.get("function_coverage") or []:
         branches = function.get("branches") or []
         uncovered = [branch for branch in branches if not branch.get("fully_covered")]
+        meta = code_fn_meta.get(function.get("function") or "", {})
         functions.append(
             {
                 **function,
+                "lineno": function.get("lineno") or meta.get("lineno", "?"),
+                "end_lineno": function.get("end_lineno") or meta.get("end_lineno", "?"),
+                "cyclomatic_complexity": (
+                    function.get("cyclomatic_complexity")
+                    or meta.get("cyclomatic_complexity", "—")
+                ),
                 "covered_branch_count": len(branches) - len(uncovered),
                 "zero_coverage_branches": len(uncovered),
             }
@@ -386,6 +436,9 @@ def build_report_data(payload: dict) -> dict:
                 except Exception:
                     pass
 
+    raw_cov_pct = coverage.get("overall_line_coverage_percent")
+    cov_pct = round(float(raw_cov_pct), 1) if raw_cov_pct is not None else None
+
     return {
         "session_id": payload.get("session_id", "unknown"),
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -398,7 +451,7 @@ def build_report_data(payload: dict) -> dict:
             "flaky": flaky_count,
             "pass_rate": pass_rate,
         },
-        "coverage_percent": coverage.get("overall_line_coverage_percent"),
+        "coverage_percent": cov_pct,
         "requirement_coverage": payload.get("requirement_coverage") or {},
         "missing_lines": coverage.get("missing_lines") or [],
         "source_lines": coverage.get("source_lines") or [],

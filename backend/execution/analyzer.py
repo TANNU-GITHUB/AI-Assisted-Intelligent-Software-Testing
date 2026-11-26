@@ -298,7 +298,12 @@ def analyze_session_execution(session_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Task 9 — Result Collection & Coverage Analysis
 # ---------------------------------------------------------------------------
-def _function_coverage(code_analysis: dict, executed_lines: set[int], missing_branch_lines: set[int]) -> list[dict]:
+def _function_coverage(
+    code_analysis: dict,
+    executed_lines: set[int],
+    missing_branch_lines: set[int],
+    missing_lines: set[int] | None = None,
+) -> list[dict]:
     """
     Cross-references Task 3's function/branch map against coverage.py's
     executed lines and missing branches to build per-function coverage,
@@ -312,9 +317,15 @@ def _function_coverage(code_analysis: dict, executed_lines: set[int], missing_br
         func_line_range = set(range(start, end + 1))
 
         covered_in_func = func_line_range & executed_lines
+        if missing_lines is not None:
+            # Divide by actual executable statements rather than blank/comment/dict-brace lines.
+            executable_in_func = func_line_range & (executed_lines | missing_lines)
+            denominator = executable_in_func if executable_in_func else func_line_range
+        else:
+            denominator = func_line_range
         line_percent = (
-            round(len(covered_in_func) / len(func_line_range) * 100, 1)
-            if func_line_range
+            round(len(covered_in_func) / len(denominator) * 100, 1)
+            if denominator
             else None
         )
 
@@ -443,7 +454,12 @@ def analyze_session_coverage(session_id: str) -> dict:
             "missing_branches_count": summary.get("num_partial_branches"),
         }
 
-    overall_line_coverage = overall.get("percent_covered")
+    raw_stmt_cov = overall.get("percent_statements_covered")
+    if raw_stmt_cov is None:
+        num_stmts = overall.get("num_statements") or 0
+        cov_stmts = overall.get("covered_lines") or 0
+        raw_stmt_cov = (100.0 * cov_stmts / num_stmts) if num_stmts else overall.get("percent_covered")
+    overall_line_coverage = round(float(raw_stmt_cov), 1) if raw_stmt_cov is not None else None
     branch_total = overall.get("num_branches") or 0
     branch_covered = overall.get("covered_branches") or 0
     overall_branch_coverage = (
@@ -466,10 +482,14 @@ def analyze_session_coverage(session_id: str) -> dict:
         function_coverage_note = "coverage.py reported no data for source.py."
     else:
         executed_lines = set(source_file_data.get("executed_lines", []))
+        missing_lines_set = set(source_file_data.get("missing_lines", []))
         missing_branches = source_file_data.get("missing_branches", [])
         missing_branch_lines = {pair[0] for pair in missing_branches}
         function_coverage = _function_coverage(
-            code_analysis, executed_lines, missing_branch_lines
+            code_analysis,
+            executed_lines,
+            missing_branch_lines,
+            missing_lines_set,
         )
 
     source_line_details: list[dict] = []

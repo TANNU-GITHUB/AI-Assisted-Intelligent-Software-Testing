@@ -166,13 +166,42 @@ def _fallback_negative_tests(source_code: str, requirement_ids: list[str]) -> li
             continue
         inputs = _default_inputs_for_function(node)
         first = required[0]
-        inputs[first] = None
+        # Check if function body explicitly handles None/falsy for this arg
+        arg_handled = False
+        for stmt in node.body:
+            if isinstance(stmt, ast.If):
+                test_str = ast.unparse(stmt.test) if hasattr(ast, "unparse") else ""
+                if f"not {first}" in test_str or f"{first} is None" in test_str:
+                    arg_handled = True
+                    break
+
+        anno = ""
+        for arg in node.args.args:
+            if arg.arg == first and arg.annotation:
+                anno = ast.unparse(arg.annotation) if hasattr(ast, "unparse") else ""
+                break
+
+        if arg_handled or "list" in anno.lower() or first.lower() in {"prices", "scores", "items", "numbers"}:
+            inputs[first] = "invalid_type_input"
+        else:
+            inputs[first] = None
+
+        # Avoid Python short-circuiting boolean `and` checks before invalid `first` is evaluated
+        has_bool_and = any(
+            isinstance(inner, ast.BoolOp) and isinstance(inner.op, ast.And)
+            for inner in ast.walk(node)
+        )
+        if has_bool_and:
+            for arg_name, arg_val in list(inputs.items()):
+                if arg_name != first and isinstance(arg_val, bool):
+                    inputs[arg_name] = True
+
         cases.append(
             {
                 "function_name": node.name,
                 "input": inputs,
                 "expected_exception": "Exception",
-                "reason": "invalid None input (heuristic fallback)",
+                "reason": "invalid malformed input (heuristic fallback)",
                 "test_type": "negative",
                 "requirement_id": req,
             }

@@ -83,9 +83,173 @@ def _suffix(filename: str) -> str:
     return "." + name.rsplit(".", 1)[-1]
 
 
+_STANDALONE_BULLET_RE = re.compile(
+    r"^(?:[●•◦▪▫▸▹▻►◆◇★☆\-–—*]|(?:\d{1,3}|[a-zA-Z])[.)])$"
+)
+_BULLET_PREFIX_RE = re.compile(
+    r"^(?:[●•◦▪▫▸▹▻►◆◇★☆\-–—*]\s+|(?:\d{1,3}[.)])\s+|REQ[-_]?\d+\s*[:.\-]\s*)",
+    re.IGNORECASE,
+)
+_HEADER_LINE_RE = re.compile(
+    r"^(?:pdf\s+page\s+\d+|(?:functional\s+|software\s+|system\s+|test\s+)?requirements?\s*[:-]*|flowchart\s*[:-]*|specifications?\s*[:-]*)$",
+    re.IGNORECASE,
+)
+_DANGLING_END_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "with",
+        "of",
+        "in",
+        "on",
+        "at",
+        "by",
+        "for",
+        "from",
+        "to",
+        "into",
+        "when",
+        "if",
+        "and",
+        "or",
+        "must",
+        "should",
+        "shall",
+        "can",
+        "will",
+        "are",
+        "is",
+        "was",
+        "pay",
+        "pays",
+        "get",
+        "gets",
+        "give",
+        "gives",
+        "apply",
+        "applies",
+        "raise",
+        "raises",
+        "return",
+        "returns",
+        "assign",
+        "assigns",
+        "set",
+        "sets",
+    }
+)
+
+
+_INLINE_LIST_SPLIT_RE = re.compile(
+    r"(?<=[.!?;])\s+(?=(?:\d{1,3}[.)]|[●•◦▪▸▹▻►]|REQ[-_]?\d+\s*[:.\-])\s*[A-Za-z])"
+    r"|\s+(?=(?:●|•|◦|▪|REQ[-_]?\d+\s*[:.\-])\s*[A-Za-z])",
+    re.IGNORECASE,
+)
+
+
+def reflow_requirement_text(text: str) -> str:
+    """Rejoin word-wrapped PDF/Word fragments into whole requirement lines while preserving bullets and sentences."""
+    cleaned = (text or "").replace("\ufeff", "").replace("\x00", " ")
+    # Replace zero-width spaces (common in Docs/PDF numbered lists like "1.\u200bReject") with a space.
+    cleaned = re.sub(r"[\u200b\u200c\u200d]+", " ", cleaned)
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
+    # Split inline numbered/bulleted items onto separate lines before reflowing fragments.
+    cleaned = _INLINE_LIST_SPLIT_RE.sub("\n", cleaned)
+    raw_lines = [re.sub(r"[ \t]{2,}", " ", line).strip() for line in cleaned.splitlines() if line.strip()]
+    if not raw_lines:
+        return ""
+
+    merged: list[str] = []
+    pending_bullet = False
+
+    for line in raw_lines:
+        if _STANDALONE_BULLET_RE.match(line):
+            pending_bullet = True
+            continue
+        if pending_bullet:
+            merged.append(f"• {line}")
+            pending_bullet = False
+            continue
+        if line.startswith("#") or _HEADER_LINE_RE.match(line) or line.endswith(":-"):
+            merged.append(line)
+            continue
+        if _BULLET_PREFIX_RE.match(line) or not merged:
+            merged.append(line)
+            continue
+
+        prev = merged[-1]
+        prev_body = _BULLET_PREFIX_RE.sub("", prev).strip()
+        if (
+            prev.startswith("#")
+            or _HEADER_LINE_RE.match(prev_body)
+            or prev_body.endswith((":-", ":"))
+        ):
+            merged.append(line)
+            continue
+
+        prev_ends_sentence = prev_body.endswith((".", "!", "?"))
+        prev_last_word = prev_body.split()[-1].rstrip(",;").lower() if prev_body.split() else ""
+        is_hyphen_wrap = prev.endswith("-") and line[:1].islower()
+        starts_continuation = (
+            line[0].islower()
+            or line[0] in ",.;:)]}%"
+            or (
+                not prev_ends_sentence
+                and bool(re.match(r"^(?:\d+%|\$\d+|\d+\b)", line))
+            )
+        )
+        short_fragment = not prev_ends_sentence and (
+            len(prev_body.split()) <= 2
+            or len(line.split()) <= 2
+            or prev_last_word in _DANGLING_END_WORDS
+        )
+
+        if is_hyphen_wrap or starts_continuation or short_fragment:
+            sep = "" if is_hyphen_wrap or line[0] in ",.;:)]}" else " "
+            merged[-1] = f"{prev}{sep}{line}"
+        else:
+            merged.append(line)
+
+    return "\n".join(merged)
+
+
+def clean_requirement_lines(text: str) -> list[str]:
+    """Return non-header, non-empty, bullet-stripped requirement lines after reflowing wrapped fragments."""
+    reflowed = reflow_requirement_text(text)
+    cleaned_lines: list[str] = []
+    fallback_single_words: list[str] = []
+    for raw in reflowed.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if _STANDALONE_BULLET_RE.match(line) or _HEADER_LINE_RE.match(line):
+            continue
+        body = _BULLET_PREFIX_RE.sub("", line).strip()
+        if not body or _STANDALONE_BULLET_RE.match(body) or _HEADER_LINE_RE.match(body):
+            continue
+        words = body.split()
+        # Drop short trailing-colon labels (e.g. "Requirements:", "Edge cases:") with no rule symbols
+        if body.endswith((":", ":-")) and len(words) <= 4 and not re.search(r"[<>=0-9]", body):
+            continue
+        if len(words) < 2 and not re.search(r"[<>=]", body):
+            fallback_single_words.append(body)
+            continue
+        if len(words) > 6 and re.search(r"[.!?]\s+[A-Z]", body):
+            sub_sentences = [
+                s.strip()
+                for s in re.split(r"(?<=[.!?])\s+(?=[A-Z])", body)
+                if s.strip() and len(s.split()) >= 2
+            ]
+            if len(sub_sentences) > 1:
+                cleaned_lines.extend(sub_sentences)
+                continue
+        cleaned_lines.append(body)
+    return cleaned_lines or fallback_single_words
+
+
 def _normalize(text: str) -> str:
-    text = text.replace("\x00", " ")
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = reflow_requirement_text(text)
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -101,6 +265,45 @@ def _from_plain(raw: bytes) -> str:
 
 
 def _from_pdf(raw: bytes) -> str:
+    from input_handler.pdf_visual import MAX_PDF_PAGES
+
+    # Prefer PyMuPDF's layout-aware block extractor so narrow PDF columns don't emit one word per line.
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        fitz = None
+
+    if fitz is not None:
+        try:
+            document = fitz.open(stream=raw, filetype="pdf")
+        except Exception:
+            document = None
+        if document is not None:
+            try:
+                if len(document) > MAX_PDF_PAGES:
+                    raise DocumentExtractError(
+                        f"PDF has more than {MAX_PDF_PAGES} pages. Split it into smaller files."
+                    )
+                if not document.is_encrypted or document.authenticate(""):
+                    pages: list[str] = []
+                    for page in document:
+                        try:
+                            blocks = page.get_text("blocks", sort=True)
+                            if blocks:
+                                block_texts = [
+                                    str(b[4]).strip()
+                                    for b in blocks
+                                    if len(b) > 4 and str(b[4]).strip()
+                                ]
+                                pages.append("\n".join(block_texts))
+                            else:
+                                pages.append(page.get_text("text") or "")
+                        except Exception:
+                            continue
+                    return "\n".join(pages)
+            finally:
+                document.close()
+
     try:
         from pypdf import PdfReader
     except ImportError as exc:
@@ -111,13 +314,12 @@ def _from_pdf(raw: bytes) -> str:
         reader = PdfReader(io.BytesIO(raw))
     except Exception as exc:  # noqa: BLE001
         raise DocumentExtractError("Could not read that PDF.") from exc
-    from input_handler.pdf_visual import MAX_PDF_PAGES
 
     if len(reader.pages) > MAX_PDF_PAGES:
         raise DocumentExtractError(
             f"PDF has more than {MAX_PDF_PAGES} pages. Split it into smaller files."
         )
-    pages: list[str] = []
+    pages = []
     for page in reader.pages:
         try:
             pages.append(page.extract_text() or "")

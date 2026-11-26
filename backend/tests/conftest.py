@@ -13,6 +13,15 @@ def pytest_configure():
     os.environ["JWT_SECRET"] = "test-only-" + "0" * 64
 
 
+@pytest.fixture(autouse=True)
+def _reset_llm_cooldown():
+    from llm_client import clear_nvidia_exhausted
+
+    clear_nvidia_exhausted()
+    yield
+    clear_nvidia_exhausted()
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     from app import app

@@ -256,3 +256,45 @@ def test_diagram_vision_failure_is_reported_as_upstream_error(
     assert response.status_code == 502
     assert response.json()["detail"] == "Vision service unavailable."
     assert "Diagram requirements extraction failed: Vision service unavailable." in caplog.text
+
+
+def test_reflow_joins_pdf_wrapped_single_words_and_preserves_bullets():
+    from input_handler.documents import reflow_requirement_text
+
+    messy = (
+        "Requirements:-\n\n●\n\nReject\n\nnegative\n\nprices\n\nwith\n\nValueError.\n\n"
+        "●\n\nNon-\nmembers\n\npay\n\na\n\n$5\n\ndelivery\n\nfee."
+    )
+    reflowed = reflow_requirement_text(messy)
+    assert reflowed.splitlines() == [
+        "Requirements:-",
+        "• Reject negative prices with ValueError.",
+        "• Non-members pay a $5 delivery fee.",
+    ]
+
+    inline_zwsp = (
+        "1.\u200bReject negative prices with ValueError. "
+        "2.\u200bMembers get 10% off. "
+        "3.\u200bNon-members pay a $5 delivery fee."
+    )
+    assert reflow_requirement_text(inline_zwsp).splitlines() == [
+        "1. Reject negative prices with ValueError.",
+        "2. Members get 10% off.",
+        "3. Non-members pay a $5 delivery fee.",
+    ]
+
+    # Verify a real multi-line PDF block preserves separate numbered lines instead of flattening them to 1 line.
+    import pymupdf as fitz
+
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text(
+        (72, 72),
+        "1. Reject negative prices with ValueError.\n"
+        "2. Members get 10% off.\n"
+        "3. Non-members pay a $5 delivery fee.",
+    )
+    pdf_raw = doc.tobytes()
+    doc.close()
+    extracted = extract_requirements_text("points.pdf", pdf_raw)
+    assert len(extracted.splitlines()) == 3

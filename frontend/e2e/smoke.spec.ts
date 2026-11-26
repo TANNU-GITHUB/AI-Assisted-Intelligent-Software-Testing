@@ -64,10 +64,13 @@ test.describe('App smoke', () => {
       document.cookie = 'bugai_token=e2e-test-token; path=/';
     });
     await page.goto('/live-lab');
+    const sourceInput = page.getByRole('textbox', { name: 'Python source code' });
     const inputType = page.getByRole('combobox', { name: 'Requirements input type' });
     const requirements = page.getByRole('textbox', { name: 'Requirements text' });
 
-    await expect(requirements).toHaveValue('Default requirement.');
+    await expect(sourceInput).toHaveValue('');
+    await expect(requirements).toHaveValue('');
+    await sourceInput.fill('def sample():\n    return True\n');
     await inputType.selectOption('pdf');
     await expect(inputType).toHaveValue('pdf');
     await page.getByRole('button', { name: 'Choose PDF' }).click();
@@ -161,6 +164,8 @@ test.describe('App smoke', () => {
       document.cookie = 'bugai_token=e2e-test-token; path=/';
     });
     await page.goto('/live-lab');
+    await page.getByRole('textbox', { name: 'Python source code' }).fill('def sample():\n    return True\n');
+    await page.getByRole('textbox', { name: 'Requirements text' }).fill('sample requirement');
     const runButton = page.getByRole('button', { name: 'Run Analysis' });
     await expect(runButton).toBeEnabled({ timeout: 60_000 });
     await page.waitForTimeout(500);

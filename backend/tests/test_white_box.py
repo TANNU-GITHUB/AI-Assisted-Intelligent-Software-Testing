@@ -90,3 +90,41 @@ def test_white_box_uses_llm_when_available(tmp_path, monkeypatch):
     assert generated
     assert generated[0]["source"] == "llm"
     assert generated[0]["case_count"] == 1
+
+
+def test_white_box_fallback_distinguishes_raise_vs_return_branches():
+    from test_generation.white_box import _fallback_cases
+
+    src = (
+        "def calc(scores: list[float]) -> float:\n"
+        "    if not scores:\n"
+        "        raise ValueError('empty')\n"
+        "    return sum(scores)\n"
+        "def cart(prices: list[float]) -> float:\n"
+        "    if not prices:\n"
+        "        return 0.0\n"
+        "    return sum(prices)\n"
+    )
+    calc_cases = _fallback_cases(
+        {
+            "name": "calc",
+            "qualified_name": "calc",
+            "params": [{"name": "scores", "annotation": "list[float]"}],
+            "branches": [{"type": "if", "lineno": 2, "condition": "not scores", "has_else": False}],
+        },
+        src,
+    )
+    assert calc_cases[0]["input"] == {"scores": []}
+    assert calc_cases[0]["expected_exception"] == "ValueError"
+
+    cart_cases = _fallback_cases(
+        {
+            "name": "cart",
+            "qualified_name": "cart",
+            "params": [{"name": "prices", "annotation": "list[float]"}],
+            "branches": [{"type": "if", "lineno": 6, "condition": "not prices", "has_else": False}],
+        },
+        src,
+    )
+    assert cart_cases[0]["input"] == {"prices": []}
+    assert cart_cases[0]["expected_exception"] is None

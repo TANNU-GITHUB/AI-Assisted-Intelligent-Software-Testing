@@ -37,9 +37,9 @@ PLACEHOLDER_KEYS = frozenset(
 )
 
 HTTP_TIMEOUT = 90.0
-NVIDIA_HTTP_TIMEOUT = 20.0
-OLLAMA_HTTP_TIMEOUT = 45.0
-CONNECT_TIMEOUT = 3.0
+NVIDIA_HTTP_TIMEOUT = 12.0
+OLLAMA_HTTP_TIMEOUT = 25.0
+CONNECT_TIMEOUT = 2.5
 NVIDIA_PROMPT_CHARS = 16_000
 OLLAMA_PROMPT_CHARS = 6_000
 NVIDIA_QUOTA_COOLDOWN = 1800.0
@@ -126,6 +126,7 @@ def resolve_nvidia_vision_model(model_name: str | None = None) -> str:
 
 
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
+_UNCLOSED_THINK_BLOCK = re.compile(r"<think>.*", re.IGNORECASE | re.DOTALL)
 _VISION_MAX_EDGE = 1536
 _VISION_MAX_PIXELS = 40_000_000
 
@@ -226,9 +227,13 @@ def _nvidia_chat(
 ) -> str:
     url = f"{NVIDIA_BASE_URL.rstrip('/')}/chat/completions"
     clipped = _clip_prompt(prompt, max_chars)
+    messages: list[dict[str, str]] = []
+    if "nemotron" in model.lower():
+        messages.append({"role": "system", "content": "/no_think"})
+    messages.append({"role": "user", "content": clipped})
     body = {
         "model": model,
-        "messages": [{"role": "user", "content": clipped}],
+        "messages": messages,
         "temperature": temperature,
         "max_tokens": 2048,
         "stream": False,
@@ -244,7 +249,13 @@ def _nvidia_chat(
             json=body,
         )
         response.raise_for_status()
-        return _extract_openai_content(response.json())
+        content = _extract_openai_content(response.json())
+        cleaned = _strip_thinking(content)
+        if not cleaned:
+            cleaned = content.strip()
+        if not cleaned:
+            raise ValueError("LLM returned empty content.")
+        return cleaned
 
 
 _NVIDIA_EXHAUSTED_UNTIL = 0.0
@@ -293,7 +304,11 @@ def _ollama_chat(
             data = response.json()
             text = (data.get("message") or {}).get("content")
             if text and str(text).strip():
-                return str(text).strip()
+                raw_text = str(text).strip()
+                cleaned = _strip_thinking(raw_text)
+                return cleaned or raw_text
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as exc:
+            raise ValueError(f"Ollama chat generation timed out or failed to connect for model '{model}': {exc}") from exc
         except Exception:
             pass
 
@@ -307,7 +322,9 @@ def _ollama_chat(
         try:
             response = client.post(openai_url, json=body)
             response.raise_for_status()
-            return _extract_openai_content(response.json())
+            raw_text = _extract_openai_content(response.json())
+            cleaned = _strip_thinking(raw_text)
+            return cleaned or raw_text
         except Exception as exc:
             raise ValueError(f"Ollama chat generation failed for model '{model}': {exc}") from exc
 
@@ -368,7 +385,12 @@ def _prepare_vision_image(image_bytes: bytes, mime_type: str) -> tuple[bytes, st
 
 
 def _strip_thinking(text: str) -> str:
-    return _THINK_BLOCK.sub("", text).strip()
+    cleaned = _THINK_BLOCK.sub("", text).strip()
+    if "<think>" in cleaned.lower():
+        without_unclosed = _UNCLOSED_THINK_BLOCK.sub("", cleaned).strip()
+        if without_unclosed:
+            return without_unclosed
+    return cleaned
 
 
 def generate_from_image(
@@ -579,7 +601,7 @@ def generate_text(
                 return text, f"ollama:{ollama_model}"
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"Ollama ({ollama_model}): {exc}")
-                if not (_is_nvidia_context_error(exc) or _is_nvidia_unavailable(exc)):
+                if not _is_nvidia_context_error(exc):
                     break
     else:
         errors.append(

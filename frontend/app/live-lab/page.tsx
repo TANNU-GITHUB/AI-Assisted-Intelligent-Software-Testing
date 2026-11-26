@@ -23,7 +23,6 @@ import {
   createSession,
   extractRequirementsDocument,
   extractRequirementsDiagram,
-  fetchExample,
   persistSessionId,
   runCodeAnalysis,
   runRequirementAnalysis,
@@ -44,30 +43,6 @@ const TestingLabScene = dynamic(
   { ssr: false }
 );
 
-const FALLBACK_SOURCE = `def calculate_discount(price: float, is_member: bool) -> float:
-    if price < 0:
-        raise ValueError("price must be non-negative")
-    if is_member:
-        return price * 0.9
-    return price
-
-
-def checkout_total(prices: list[float], is_member: bool) -> float:
-    total = 0.0
-    for price in prices:
-        total += calculate_discount(price, is_member)
-    if total > 500 and is_member:
-        total -= 20
-    return total
-`;
-
-const FALLBACK_REQUIREMENTS = `Members receive a 10% discount on every item.
-Non-members pay the full price.
-Negative prices must be rejected with an error.
-If a member's checkout total is greater than 500, apply an extra 20 currency units off.
-Empty carts should produce a total of 0.
-`;
-
 const analysisStages = [
   { label: 'Saving source and requirements...', icon: FileText },
   { label: 'Analyzing source code...', icon: Code2 },
@@ -85,13 +60,13 @@ export default function LiveLabPage() {
   const [phase, setPhase] = useState<'idle' | 'running' | 'complete'>('idle');
   const [stageIndex, setStageIndex] = useState(0);
   const [show3D, setShow3D] = useState(false);
-  const [sourceCode, setSourceCode] = useState(FALLBACK_SOURCE);
-  const [requirements, setRequirements] = useState(FALLBACK_REQUIREMENTS);
-  const [filename, setFilename] = useState('sample_source.py');
+  const [sourceCode, setSourceCode] = useState('');
+  const [requirements, setRequirements] = useState('');
+  const [filename, setFilename] = useState('');
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionPayload | null>(null);
-  const [requirementsFilename, setRequirementsFilename] = useState('requirements.txt');
+  const [requirementsFilename, setRequirementsFilename] = useState('');
   const [requirementsInputType, setRequirementsInputType] = useState<
     'text' | 'pdf' | 'document' | 'diagram'
   >('text');
@@ -106,14 +81,6 @@ export default function LiveLabPage() {
   useEffect(() => {
     setShow3D(true);
     checkHealth().then(setBackendUp);
-    fetchExample()
-      .then((example) => {
-        setSourceCode(example.source_code);
-        setRequirements(example.requirements_text);
-        setFilename(example.filename);
-        setRequirementsFilename('requirements.txt');
-      })
-      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -189,6 +156,10 @@ export default function LiveLabPage() {
 
   const runAnalysis = async () => {
     if (runningRef.current) return;
+    if (!sourceCode.trim() || !requirements.trim()) {
+      setError('Please enter or upload both Python source code and requirements.');
+      return;
+    }
     runningRef.current = true;
     let latest: SessionPayload | null = null;
     try {
@@ -196,7 +167,7 @@ export default function LiveLabPage() {
       setSession(null);
       setPhase('running');
       setStageIndex(0);
-      const created = await createSession(sourceCode, requirements, filename);
+      const created = await createSession(sourceCode, requirements, filename || 'source.py');
       latest = created;
       persistSessionId(created.session_id);
       setStageIndex(1);
@@ -417,6 +388,7 @@ export default function LiveLabPage() {
               />
             </div>
             <textarea
+              aria-label="Python source code"
               value={sourceCode}
               onChange={(e) => setSourceCode(e.target.value)}
               disabled={phase === 'running'}

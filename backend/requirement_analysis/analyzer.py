@@ -6,7 +6,8 @@ import re
 from typing import Any
 
 from config import NVIDIA_API_KEY, NVIDIA_MODEL
-from llm_client import generate_text
+from llm_client import LLMError, generate_text, llm_is_configured
+from input_handler.documents import clean_requirement_lines, reflow_requirement_text
 from input_handler.handler import load_session, save_session, session_dir, session_locked
 from json_utils import extract_json as _extract_json
 from requirement_analysis.prompts import PROMPT_TEMPLATE, STRICT_RETRY_PROMPT
@@ -153,8 +154,11 @@ def _normalize(data: Any) -> list[dict[str, str]]:
 
 def _heuristic_requirements(requirements_text: str) -> list[dict[str, str]]:
     """Split requirements into structured rules when the LLM is unavailable."""
-    raw_lines = [line.strip() for line in requirements_text.splitlines() if line.strip()]
-    lines = [l for l in raw_lines if not l.lower().startswith("pdf page")]
+    lines = clean_requirement_lines(requirements_text)
+    if len(lines) == 1 and re.search(r"[.!?]\s+[A-Z]", lines[0]):
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z])", lines[0]) if s.strip()]
+        if len(sentences) > 1:
+            lines = sentences
     if lines:
         items: list[dict[str, str]] = []
         for index, chunk in enumerate(lines[:24], start=1):
@@ -195,6 +199,22 @@ def _heuristic_requirements(requirements_text: str) -> list[dict[str, str]]:
     return items
 
 
+def _line_is_covered_by_items(line: str, items: list[dict[str, str]]) -> bool:
+    low_line = line.lower()
+    line_tokens = {tok for tok in re.findall(r"[a-z0-9_]+", low_line) if len(tok) >= 2}
+    for item in items:
+        item_blob = (
+            f"{item.get('condition', '')} {item.get('source_excerpt', '')} {item.get('expected_result', '')}"
+        ).lower()
+        if low_line in item_blob:
+            return True
+        if line_tokens:
+            item_tokens = {tok for tok in re.findall(r"[a-z0-9_]+", item_blob) if len(tok) >= 2}
+            if len(line_tokens & item_tokens) / len(line_tokens) >= 0.7:
+                return True
+    return False
+
+
 def _call_llm(prompt: str, api_key: str, model_name: str) -> str:
     text, model_used = generate_text(prompt, api_key=api_key, model_name=model_name)
     _call_llm.last_model_used = model_used
@@ -211,7 +231,7 @@ def analyze_requirements(
     key = (api_key if api_key is not None else NVIDIA_API_KEY).strip()
     model = model_name or NVIDIA_MODEL
 
-    text = requirements_text.strip()
+    text = reflow_requirement_text(requirements_text).strip()
     if not text:
         raise RequirementAnalysisError("Requirements text cannot be empty.")
     if len(text) > 12_000:
@@ -225,26 +245,27 @@ def analyze_requirements(
         return _normalize(_extract_json(raw))
 
     fallback_reason = None
-    try:
-        items = _run_prompt(first_prompt)
-    except Exception as exc:  # noqa: BLE001
+    if llm_call is _call_llm and api_key is None and not llm_is_configured():
+        items = _heuristic_requirements(text)
+        fallback_reason = "No LLM available (NVIDIA quota/network unavailable and Ollama offline)."
+    else:
         try:
-            items = _run_prompt(retry_prompt)
-        except Exception as retry_exc:  # noqa: BLE001
+            items = _run_prompt(first_prompt)
+        except LLMError as exc:
+            # Provider/network timeout errors must fall back immediately instead of retrying the dead provider.
             items = _heuristic_requirements(text)
-            fallback_reason = str(retry_exc) or str(exc)
+            fallback_reason = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            try:
+                items = _run_prompt(retry_prompt)
+            except Exception as retry_exc:  # noqa: BLE001
+                items = _heuristic_requirements(text)
+                fallback_reason = str(retry_exc) or str(exc)
 
     # Ensure no distinct requirement lines are dropped if the model returned only a subset
-    text_lines = [l.strip() for l in text.splitlines() if l.strip() and not l.strip().startswith("#") and not l.lower().startswith("pdf page")]
+    text_lines = clean_requirement_lines(text)
     if len(text_lines) > len(items) and len(text_lines) >= 2:
-        missing_lines = []
-        for line in text_lines:
-            low_line = line.lower()
-            if not any(
-                low_line in (item.get("condition", "") + " " + item.get("source_excerpt", "") + " " + item.get("expected_result", "")).lower()
-                for item in items
-            ):
-                missing_lines.append(line)
+        missing_lines = [line for line in text_lines if not _line_is_covered_by_items(line, items)]
         if missing_lines:
             heuristic_extras = _heuristic_requirements("\n".join(missing_lines))
             for h in heuristic_extras:
